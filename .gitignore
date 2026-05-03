@@ -1,0 +1,39 @@
+# Python/cache artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node/runtime dependencies
+node_modules/
+
+# Local env/secrets
+.env
+.env.*
+*.credentials.json
+
+# Internal handoff/reference notes stay local
+docs/
+
+# Generated logs and scratch output
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+work/
+results/
+bench/results/
+
+# Large media/raw validation artifacts
+*.f32
+*.wav
+*.m4a
+*.mov
+*.mp4
+*.mkv
+
+# Local diagnostic binaries built from scripts/*.c
+scripts/scan_raw_offset
