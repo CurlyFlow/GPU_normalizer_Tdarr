@@ -5,7 +5,7 @@ exports.plugin = exports.details = void 0;
 
 const fs = require("fs");
 
-const PLUGIN_ROOT = "/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0";
+const PLUGIN_ROOT = "/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0";
 const RUNTIME_ROOT = `${PLUGIN_ROOT}/runtime`;
 const RUNTIME_BIN = `${RUNTIME_ROOT}/bin`;
 const RUNTIME_CUDA = `${RUNTIME_ROOT}/cuda`;

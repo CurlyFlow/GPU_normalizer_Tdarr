@@ -34,10 +34,10 @@ FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loud
 Default runtime paths inside the Tdarr container stay under the same plugin folder:
 
 ```text
-/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu
-/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port
-/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/gpu-apply-sample-gains
-/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx
+/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu
+/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port
+/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/gpu-apply-sample-gains
+/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx
 ```
 
 Install by keeping/copying runtime files under `1.0.0/runtime/`. The plugin inputs still let you override paths if your Tdarr setup needs a different location.

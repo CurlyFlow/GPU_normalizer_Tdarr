@@ -613,8 +613,8 @@ def main():
     parser.add_argument('--dynamic-strength', type=float, default=1.0)
     parser.add_argument('--chunk-mib', type=float, default=64.0)
     parser.add_argument('--max-pcm-mib', type=float, default=8192.0)
-    parser.add_argument('--ptx-path', default='/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx')
-    parser.add_argument('--source-core-path', default='/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu')
+    parser.add_argument('--ptx-path', default='/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx')
+    parser.add_argument('--source-core-path', default='/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu')
     parser.add_argument('--dump-window-gains')
     args = parser.parse_args()
 
