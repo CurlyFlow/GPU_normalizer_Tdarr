@@ -1,5 +1,7 @@
 # GPU Normalize Audio for Tdarr
 
+WARNING: WORK IN PROGRES, THERE MIGHT BE RISK OF BUGS. 
+
 It. Can't. Be done. They said.
 
 GPU Normalize Audio is a Tdarr FlowPlugin plus CUDA runtime for FFmpeg `loudnorm`-style audio normalization.
