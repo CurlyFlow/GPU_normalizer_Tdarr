@@ -12,12 +12,6 @@ FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/
 
 ## Plugin
 
-Tdarr loads the JavaScript entrypoint from the standard CommunityFlowPlugin path:
-
-```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/index.js
-```
-
 The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream. Long-running decode, GPU normalize, encode, and mux steps report Tdarr worker percentage and ETA updates.
 
 Bundled runtime/source files live under the plugin runtime folder:
