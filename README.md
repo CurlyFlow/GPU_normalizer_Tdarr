@@ -74,3 +74,6 @@ Raw audio parity against the exact source-core path:
 | 5.1 full 596s | 99.204% | 20.993 dB | 73.708s | 14.966s | 4.9x |
 
 Validated plugin behavior includes plugin load/defaults, no-audio skip, max-gain gate, PCM size guard, missing-runtime failure paths, all-audio normalization, and video/subtitle/data/attachment stream preservation.
+
+<img width="1587" height="1443" alt="image" src="https://github.com/user-attachments/assets/9fc7119d-2caa-4bcf-b08b-f857e450f931" />
+
