@@ -49,10 +49,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Validate plugin entrypoint
-        run: node --check FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/index.js
+        run: node --check src/gpuNormalizeAudio/index.js
 
       - name: Validate runtime scripts
-        run: python3 -m py_compile FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/compile_cuda_ptx.py
+        run: python3 -m py_compile src/gpuNormalizeAudio/runtime/bin/loudnorm-gpu-source-port src/gpuNormalizeAudio/runtime/cuda/compile_cuda_ptx.py
 
       - name: Build release package
         shell: bash
@@ -64,18 +64,17 @@ jobs:
           package_dir="GPU_normalize_audio_tdarr-${version}"
           staging="$(mktemp -d)"
 
-          source_version="1.0.0"
+          source_dir="src/gpuNormalizeAudio"
           plugin_base="FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio"
 
           mkdir -p "$staging/$package_dir/$plugin_base"
           cp -a README.md "$staging/$package_dir/"
           cp -a \
-            "$plugin_base/$source_version" \
+            "$source_dir" \
             "$staging/$package_dir/$plugin_base/$version"
 
-          perl -0pi -e "s#gpuNormalizeAudio/\Q$source_version\E#gpuNormalizeAudio/$version#g" \
-            "$staging/$package_dir/$plugin_base/$version/index.js"
-          perl -0pi -e "s#'gpuNormalizeAudio', '\Q$source_version\E'#'gpuNormalizeAudio', '$version'#g" \
+          perl -0pi -e "s#__PLUGIN_VERSION__#$version#g" \
+            "$staging/$package_dir/$plugin_base/$version/index.js" \
             "$staging/$package_dir/$plugin_base/$version/runtime/bin/loudnorm-gpu-source-port"
 
           node --check "$staging/$package_dir/$plugin_base/$version/index.js"

@@ -13,7 +13,7 @@ import time
 
 
 FLOW_PLUGINS_ROOT = '/app/server/Tdarr/Plugins/FlowPlugins'
-PLUGIN_ROOT = os.path.join(FLOW_PLUGINS_ROOT, 'CommunityFlowPlugins', 'audio', 'gpuNormalizeAudio', '1.0.0')
+PLUGIN_ROOT = os.path.join(FLOW_PLUGINS_ROOT, 'CommunityFlowPlugins', 'audio', 'gpuNormalizeAudio', '__PLUGIN_VERSION__')
 RUNTIME_ROOT = os.path.join(PLUGIN_ROOT, 'runtime')
 RUNTIME_BIN = os.path.join(RUNTIME_ROOT, 'bin')
 RUNTIME_CUDA = os.path.join(RUNTIME_ROOT, 'cuda')
