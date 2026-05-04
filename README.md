@@ -71,7 +71,7 @@ The default mode is `gpuSourcePort`.
 
 ## Performance
 
-Use the newest release unless you need to roll back for your own validation. `1.0.6` is the recommended performance line: it makes `gpuSourcePort` the default and carries forward the best validated long-file GPU result. `1.0.5` is the previous recommended line with the same source-port runtime but `sourceExact` as the default. `1.0.2` is useful only if you specifically want the pair-grid stats-kernel improvement without later runtime changes. `1.0.0` is the baseline package and should only be used when you need the original release behavior.
+Use the newest release unless you need to roll back for your own validation. `1.0.6` makes `gpuSourcePort` the default. `1.0.5` has the same source-port runtime but keeps `sourceExact` as the default. `1.0.2` is useful only if you specifically want the pair-grid stats-kernel improvement without later runtime changes. `1.0.0` is the baseline package and should only be used when you need the original release behavior.
 
 Version guidance:
 
@@ -80,17 +80,9 @@ Version guidance:
 | `1.0.0` | Use only for rollback or baseline comparison. | Original public baseline. Raw `gpuSourcePort` validation reached 99%+ similarity, but long-file runtime was much slower than later versions. |
 | `1.0.2` | Use only if newer releases are not suitable for your setup. | Pair-grid stats kernels made the 596s 5.1 raw case about `2.3x` faster than the previous GPU source-port build while keeping the same audio similarity. |
 | `1.0.5` | Use if you want the previous `sourceExact` default. | Same validated source-port runtime line as `1.0.6`, but keeps the older conservative default. |
-| `1.0.6` | Recommended for new installs. | `gpuSourcePort` default. 5.1 60min raw validation reached `99.592%` energy similarity and `9.6x` speedup against the source-exact reference path. |
+| `1.0.6` | Current GPU-source-port default line. | `gpuSourcePort` default. Compare this line against Tdarr's CPU-only `Normalize Audio` plugin for both speed and output audio before production rollout. |
 
-Raw audio parity against the exact source-core path for the recommended line:
-
-Times below are raw PCM validation results. Full Tdarr jobs also include FFmpeg decode, encode, and mux time.
-
-| Case | Energy similarity | SDR | Source-exact time | GPU time | Speedup |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 5.1 12s | 100.000% | 146.441 dB | 1.440s | 1.364s | 1.1x |
-| Stereo 60s | 99.555% | 23.519 dB | 1.827s | 0.551s | 3.3x |
-| 5.1 60min | 99.592% | 23.889 dB | 419.910s | 43.573s | 9.6x |
+Performance and audio comparisons should use Tdarr's normal CPU-only Community `Normalize Audio` plugin as the baseline. The expected target is CPU-normalizer output behavior with GPU acceleration, not a separate raw helper path.
 
 Validated plugin behavior includes plugin load/defaults, no-audio skip, max-gain gate, PCM size guard, missing-runtime failure paths, all-audio normalization, and video/subtitle/data/attachment stream preservation.
 
