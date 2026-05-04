@@ -248,7 +248,7 @@ const details = () => ({
   sidebarPosition: -1,
   icon: "faVolumeUp",
   inputs: [
-    { label: "Planner Mode", name: "plannerMode", type: "string", defaultValue: "sourceExact", inputUI: { type: "text" }, tooltip: "sourceExact uses the exact source-core planner with GPU apply. gpuSourcePort uses the CUDA source-port planner and apply path." },
+    { label: "Planner Mode", name: "plannerMode", type: "string", defaultValue: "gpuSourcePort", inputUI: { type: "text" }, tooltip: "gpuSourcePort uses the CUDA source-port planner and apply path. sourceExact uses the source-core planner with GPU apply." },
     { label: "Source Core Path", name: "sourceCorePath", type: "string", defaultValue: `${RUNTIME_BIN}/loudnorm-source-cpu`, inputUI: { type: "text" }, tooltip: "Path to the FFmpeg-source loudnorm planning core inside the plugin runtime folder." },
     { label: "GPU Plan Core Path", name: "gpuPlanCorePath", type: "string", defaultValue: `${RUNTIME_BIN}/loudnorm-gpu-source-port`, inputUI: { type: "text" }, tooltip: "Path to the CUDA source-port loudness/gain planner inside the plugin runtime folder." },
     { label: "GPU Apply Path", name: "gpuApplyPath", type: "string", defaultValue: `${RUNTIME_BIN}/gpu-apply-sample-gains`, inputUI: { type: "text" }, tooltip: "Path to the CUDA per-sample gain renderer used by sourceExact mode, inside the plugin runtime folder." },
@@ -288,7 +288,7 @@ const plugin = async (args) => {
     return { outputFileObj: args.inputFileObj, outputNumber: 1, variables: args.variables };
   }
 
-  const plannerMode = String(args.inputs.plannerMode || "sourceExact").trim();
+  const plannerMode = String(args.inputs.plannerMode || "gpuSourcePort").trim();
   const useGpuSourcePort = plannerMode === "gpuSourcePort";
   const sourceCorePath = String(args.inputs.sourceCorePath || `${RUNTIME_BIN}/loudnorm-source-cpu`).trim();
   const gpuPlanCorePath = String(args.inputs.gpuPlanCorePath || `${RUNTIME_BIN}/loudnorm-gpu-source-port`).trim();

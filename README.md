@@ -44,7 +44,7 @@ Install by keeping runtime files under the same version folder as `index.js`. Th
 
 This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port`, `compile_cuda_ptx.py`, `loudnorm_source_port_kernels.cu`, and `loudnorm_source_port_kernels.ptx`.
 
-`sourceExact` mode also needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` companion binaries in `runtime/bin/`. `gpuSourcePort` uses `loudnorm-gpu-source-port` for the main planner/render path and uses `loudnorm-source-cpu` only for the short-file exact fallback.
+`gpuSourcePort` is the default planner/render path. It uses `loudnorm-gpu-source-port` for CUDA loudness planning and rendering, and uses `loudnorm-source-cpu` only for the short-file exact fallback. `sourceExact` remains available as a compatibility mode and needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` companion binaries in `runtime/bin/`.
 
 ## Releases
 
@@ -54,10 +54,10 @@ The repository source is versionless; only release assets use versioned Tdarr pl
 
 ## Modes
 
-- `sourceExact`: uses the source-core loudnorm planner and GPU sample-gain apply path.
-- `gpuSourcePort`: uses the CUDA source-port planner and renderer.
+- `gpuSourcePort`: default. Uses the CUDA source-port planner and renderer.
+- `sourceExact`: compatibility mode. Uses the source-core loudnorm planner and GPU sample-gain apply path.
 
-The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` only after validating it on your hardware and media mix.
+The default mode is `gpuSourcePort`.
 
 ## Safety Behavior
 
@@ -71,15 +71,16 @@ The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` o
 
 ## Performance
 
-Use the newest release unless you need to roll back for your own validation. `1.0.5` is the recommended performance line: it keeps conservative `sourceExact` as the default, keeps `gpuSourcePort` opt-in, and has the best validated long-file GPU result. `1.0.2` is useful only if you specifically want the pair-grid stats-kernel improvement without later runtime changes. `1.0.0` is the baseline package and should only be used when you need the original release behavior.
+Use the newest release unless you need to roll back for your own validation. `1.0.6` is the recommended performance line: it makes `gpuSourcePort` the default and carries forward the best validated long-file GPU result. `1.0.5` is the previous recommended line with the same source-port runtime but `sourceExact` as the default. `1.0.2` is useful only if you specifically want the pair-grid stats-kernel improvement without later runtime changes. `1.0.0` is the baseline package and should only be used when you need the original release behavior.
 
 Version guidance:
 
 | Version | Advice | Performance note |
 | --- | --- | --- |
 | `1.0.0` | Use only for rollback or baseline comparison. | Original public baseline. Raw `gpuSourcePort` validation reached 99%+ similarity, but long-file runtime was much slower than later versions. |
-| `1.0.2` | Use only if `1.0.5` is not suitable for your setup. | Pair-grid stats kernels made the 596s 5.1 raw case about `2.3x` faster than the previous GPU source-port build while keeping the same audio similarity. |
-| `1.0.5` | Recommended for new installs. | Best validated line so far: 5.1 60min raw validation reached `99.592%` energy similarity and `9.6x` speedup against the source-exact reference path. |
+| `1.0.2` | Use only if newer releases are not suitable for your setup. | Pair-grid stats kernels made the 596s 5.1 raw case about `2.3x` faster than the previous GPU source-port build while keeping the same audio similarity. |
+| `1.0.5` | Use if you want the previous `sourceExact` default. | Same validated source-port runtime line as `1.0.6`, but keeps the older conservative default. |
+| `1.0.6` | Recommended for new installs. | `gpuSourcePort` default. 5.1 60min raw validation reached `99.592%` energy similarity and `9.6x` speedup against the source-exact reference path. |
 
 Raw audio parity against the exact source-core path for the recommended line:
 
