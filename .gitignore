@@ -13,6 +13,7 @@ node_modules/
 *.credentials.json
 
 # Internal handoff/reference notes stay local
+AGENTS.md
 docs/
 
 # Generated logs and scratch output

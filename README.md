@@ -20,7 +20,7 @@ FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/index.js
 
 The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream.
 
-Bundled runtime/source files are beside the plugin entrypoint:
+Bundled runtime/source files live under the plugin runtime folder:
 
 ```text
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port
@@ -31,18 +31,18 @@ FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loud
 
 ## Runtime Layout
 
-Default install paths inside the Tdarr container:
+Default runtime paths inside the Tdarr container stay under the same plugin folder:
 
 ```text
-/app/server/gpu-normalizer/bin/loudnorm-source-cpu
-/app/server/gpu-normalizer/bin/loudnorm-gpu-source-port
-/app/server/gpu-normalizer/bin/gpu-apply-sample-gains
-/app/server/gpu-normalizer/bin/loudnorm_source_port_kernels.ptx
+/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu
+/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port
+/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/gpu-apply-sample-gains
+/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx
 ```
 
-Install by copying the files from `runtime/bin` and `runtime/cuda` into that container directory, or set the plugin inputs to your own paths.
+Install by keeping/copying runtime files under `1.0.0/runtime/`. The plugin inputs still let you override paths if your Tdarr setup needs a different location.
 
-`sourceExact` mode also needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` binaries at the configured paths. `gpuSourcePort` uses `loudnorm-gpu-source-port` for the main planner/render path and uses `loudnorm-source-cpu` only for the short-file exact fallback.
+`sourceExact` mode also needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` binaries in `runtime/bin/`. `gpuSourcePort` uses `loudnorm-gpu-source-port` for the main planner/render path and uses `loudnorm-source-cpu` only for the short-file exact fallback.
 
 ## Modes
 
@@ -54,6 +54,7 @@ The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` o
 ## Safety Behavior
 
 - `channels=auto` matches each source audio stream's channel count.
+- `ensureStereo=true` is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this Migz-style behavior.
 - `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
 - `maxPcmMiB` limits decoded raw PCM per audio stream.
 - If no audio exists, the plugin skips and returns the original file.

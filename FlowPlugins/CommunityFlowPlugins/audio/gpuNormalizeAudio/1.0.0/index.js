@@ -5,6 +5,11 @@ exports.plugin = exports.details = void 0;
 
 const fs = require("fs");
 
+const PLUGIN_ROOT = "/app/Tdarr_Node/assets/app/plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0";
+const RUNTIME_ROOT = `${PLUGIN_ROOT}/runtime`;
+const RUNTIME_BIN = `${RUNTIME_ROOT}/bin`;
+const RUNTIME_CUDA = `${RUNTIME_ROOT}/cuda`;
+
 function requireAny(paths) {
   const errors = [];
   for (const modulePath of paths) {
@@ -62,6 +67,14 @@ function num(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function boolInput(value, fallback) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "") return fallback;
+  if (["true", "1", "yes", "y", "on"].includes(raw)) return true;
+  if (["false", "0", "no", "n", "off"].includes(raw)) return false;
+  return fallback;
+}
+
 function langTag(value) {
   const cleaned = String(value || "und").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 16);
   return cleaned || "und";
@@ -91,9 +104,9 @@ const details = () => ({
   icon: "faVolumeUp",
   inputs: [
     { label: "Planner Mode", name: "plannerMode", type: "string", defaultValue: "sourceExact", inputUI: { type: "text" }, tooltip: "sourceExact uses the exact source-core planner with GPU apply. gpuSourcePort uses the CUDA source-port planner and apply path." },
-    { label: "Source Core Path", name: "sourceCorePath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/loudnorm-source-cpu", inputUI: { type: "text" }, tooltip: "Path to the FFmpeg-source loudnorm planning core inside the Tdarr container." },
-    { label: "GPU Plan Core Path", name: "gpuPlanCorePath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/loudnorm-gpu-source-port", inputUI: { type: "text" }, tooltip: "Path to the CUDA source-port loudness/gain planner inside the Tdarr container." },
-    { label: "GPU Apply Path", name: "gpuApplyPath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/gpu-apply-sample-gains", inputUI: { type: "text" }, tooltip: "Path to the CUDA per-sample gain renderer used by sourceExact mode." },
+    { label: "Source Core Path", name: "sourceCorePath", type: "string", defaultValue: `${RUNTIME_BIN}/loudnorm-source-cpu`, inputUI: { type: "text" }, tooltip: "Path to the FFmpeg-source loudnorm planning core inside the plugin runtime folder." },
+    { label: "GPU Plan Core Path", name: "gpuPlanCorePath", type: "string", defaultValue: `${RUNTIME_BIN}/loudnorm-gpu-source-port`, inputUI: { type: "text" }, tooltip: "Path to the CUDA source-port loudness/gain planner inside the plugin runtime folder." },
+    { label: "GPU Apply Path", name: "gpuApplyPath", type: "string", defaultValue: `${RUNTIME_BIN}/gpu-apply-sample-gains`, inputUI: { type: "text" }, tooltip: "Path to the CUDA per-sample gain renderer used by sourceExact mode, inside the plugin runtime folder." },
     { label: "GPU Chunk MiB", name: "gpuChunkMiB", type: "string", defaultValue: "64", inputUI: { type: "text" }, tooltip: "Input/gain/output chunk size used by the GPU runtime." },
     { label: "Integrated Loudness I", name: "i", type: "string", defaultValue: "-18.0", inputUI: { type: "text" }, tooltip: "FFmpeg loudnorm I target in LUFS." },
     { label: "Loudness Range LRA", name: "lra", type: "string", defaultValue: "7.0", inputUI: { type: "text" }, tooltip: "FFmpeg loudnorm LRA target in LU." },
@@ -101,6 +114,7 @@ const details = () => ({
     { label: "Max Gain dB", name: "maxGain", type: "string", defaultValue: "15", inputUI: { type: "text" }, tooltip: "Safety gate. If target I minus measured input_i exceeds this value, copy the original package instead of normalizing. Use 0 to disable." },
     { label: "PCM Sample Rate", name: "sampleRate", type: "string", defaultValue: "192000", inputUI: { type: "text" }, tooltip: "FFmpeg dynamic loudnorm uses 192000 Hz internally. Keep 192000 for parity." },
     { label: "PCM Channels", name: "channels", type: "string", defaultValue: "auto", inputUI: { type: "text" }, tooltip: "Use auto/source to match each audio stream channel count, or set a fixed channel count." },
+    { label: "Ensure Stereo Track", name: "ensureStereo", type: "string", defaultValue: "true", inputUI: { type: "text" }, tooltip: "Migz-style behavior: if the normalized output would have no 2-channel audio track, add a normalized stereo downmix from the first audio stream. Set false to disable." },
     { label: "Audio Bitrate", name: "audioBitrate", type: "string", defaultValue: "192k", inputUI: { type: "text" }, tooltip: "AAC bitrate for normalized audio streams." },
     { label: "Max PCM MiB", name: "maxPcmMiB", type: "string", defaultValue: "65536", inputUI: { type: "text" }, tooltip: "Abort if a decoded raw audio stream exceeds this size." },
   ],
@@ -124,9 +138,9 @@ const plugin = async (args) => {
 
   const plannerMode = String(args.inputs.plannerMode || "sourceExact").trim();
   const useGpuSourcePort = plannerMode === "gpuSourcePort";
-  const sourceCorePath = String(args.inputs.sourceCorePath || "/app/server/gpu-normalizer/bin/loudnorm-source-cpu").trim();
-  const gpuPlanCorePath = String(args.inputs.gpuPlanCorePath || "/app/server/gpu-normalizer/bin/loudnorm-gpu-source-port").trim();
-  const gpuApplyPath = String(args.inputs.gpuApplyPath || "/app/server/gpu-normalizer/bin/gpu-apply-sample-gains").trim();
+  const sourceCorePath = String(args.inputs.sourceCorePath || `${RUNTIME_BIN}/loudnorm-source-cpu`).trim();
+  const gpuPlanCorePath = String(args.inputs.gpuPlanCorePath || `${RUNTIME_BIN}/loudnorm-gpu-source-port`).trim();
+  const gpuApplyPath = String(args.inputs.gpuApplyPath || `${RUNTIME_BIN}/gpu-apply-sample-gains`).trim();
   const gpuChunkMiB = String(args.inputs.gpuChunkMiB || "64").trim();
   if (useGpuSourcePort) {
     if (!fs.existsSync(gpuPlanCorePath)) throw missingRuntime("GPU plan core", gpuPlanCorePath);
@@ -141,6 +155,7 @@ const plugin = async (args) => {
   const targetLra = num(args.inputs.lra, 7.0);
   const targetTp = num(args.inputs.tp, -2.0);
   const maxGain = num(args.inputs.maxGain, 15);
+  const ensureStereo = boolInput(args.inputs.ensureStereo, true);
   const maxBytes = Math.floor(maxPcmMiB * 1024 * 1024);
   const audioBitrate = String(args.inputs.audioBitrate || "192k").replace(/[^0-9kKmM]/g, "") || "192k";
   const container = getContainer(args.inputFileObj._id);
@@ -167,8 +182,10 @@ const plugin = async (args) => {
     const suffix = `a${idx}`;
     return {
       idx,
+      sourceIdx: idx,
       channels: streamChannels,
       language: langTag((stream.tags || {}).language || stream.language || "und"),
+      stereoFallback: false,
       rawInput: `${workDir}/${base}.gpu-normalize.${suffix}.input.f32`,
       gains: `${workDir}/${base}.gpu-normalize.${suffix}.gains.f32`,
       sourceErr: `${workDir}/${base}.gpu-normalize.${suffix}.source.err`,
@@ -176,13 +193,28 @@ const plugin = async (args) => {
       normalizedAudio: `${workDir}/${base}.gpu-normalized.${suffix}.m4a`,
     };
   });
+  if (ensureStereo && !audioPlans.some((plan) => plan.channels === 2)) {
+    const stream = audioStreams[0];
+    audioPlans.push({
+      idx: audioPlans.length,
+      sourceIdx: 0,
+      channels: 2,
+      language: langTag((stream.tags || {}).language || stream.language || "und"),
+      stereoFallback: true,
+      rawInput: `${workDir}/${base}.gpu-normalize.stereo.input.f32`,
+      gains: `${workDir}/${base}.gpu-normalize.stereo.gains.f32`,
+      sourceErr: `${workDir}/${base}.gpu-normalize.stereo.source.err`,
+      rawGpu: `${workDir}/${base}.gpu-normalize.stereo.output.f32`,
+      normalizedAudio: `${workDir}/${base}.gpu-normalized.stereo.m4a`,
+    });
+  }
   const allIntermediateFiles = audioPlans.flatMap((plan) => [plan.rawInput, plan.gains, plan.sourceErr, plan.rawGpu, plan.normalizedAudio]);
   const cleanupAll = `rm -f ${allIntermediateFiles.map(q).join(" ")}`;
   const perAudioScripts = [];
   for (const plan of audioPlans) {
     const decode = [
       q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-i", q(args.inputFileObj._id),
-      "-map", `0:a:${plan.idx}`, "-vn", "-sn", "-dn", "-ac", String(plan.channels), "-ar", String(sampleRate), "-f", "f32le", q(plan.rawInput),
+      "-map", `0:a:${plan.sourceIdx}`, "-vn", "-sn", "-dn", "-ac", String(plan.channels), "-ar", String(sampleRate), "-f", "f32le", q(plan.rawInput),
     ].join(" ");
     const source = [q(sourceCorePath), "--stream", q(plan.rawInput), "-", String(sampleRate), String(plan.channels), q(plan.gains), String(targetI), String(targetLra), String(targetTp), "2>", q(plan.sourceErr)].join(" ");
     const gpuPlan = [
@@ -190,6 +222,7 @@ const plugin = async (args) => {
       "--rate", String(sampleRate), "--channels", String(plan.channels),
       "--target-i", String(targetI), "--target-lra", String(targetLra), "--target-tp", String(targetTp),
       "--max-gain-db", String(maxGain), "--chunk-mib", q(gpuChunkMiB), "--max-pcm-mib", String(maxPcmMiB),
+      "--ptx-path", q(`${RUNTIME_CUDA}/loudnorm_source_port_kernels.ptx`), "--source-core-path", q(sourceCorePath),
       "2>", q(plan.sourceErr),
     ].join(" ");
     const sourceGate = maxGain > 0 ? ["python3", "-c", q(maxGainPython), q(plan.sourceErr), String(targetI), String(maxGain)].join(" ") : "true";
@@ -215,9 +248,9 @@ const plugin = async (args) => {
       `test "$gpu_rc" -eq 0`,
     ];
     perAudioScripts.push(
-      `echo 'GPU normalize audio stream ${plan.idx}: channels=${plan.channels} language=${plan.language}' >&2`,
+      `echo 'GPU normalize audio stream ${plan.sourceIdx}${plan.stereoFallback ? " stereo fallback" : ""}: channels=${plan.channels} language=${plan.language}' >&2`,
       decode,
-      `bytes=$(wc -c < ${q(plan.rawInput)}); if [ "$bytes" -gt ${maxBytes} ]; then echo 'GPU normalize PCM guard exceeded on audio stream ${plan.idx}: bytes='"$bytes"' max=${maxBytes}' >&2; exit 1; fi`,
+      `bytes=$(wc -c < ${q(plan.rawInput)}); if [ "$bytes" -gt ${maxBytes} ]; then echo 'GPU normalize PCM guard exceeded on audio stream ${plan.sourceIdx}: bytes='"$bytes"' max=${maxBytes}' >&2; exit 1; fi`,
       ...(useGpuSourcePort ? gpuPlanScript : sourceExactScript),
       encode,
       cleanupRaw,
@@ -227,9 +260,9 @@ const plugin = async (args) => {
   const muxArgs = [q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-i", q(args.inputFileObj._id)];
   for (const plan of audioPlans) muxArgs.push("-i", q(plan.normalizedAudio));
   muxArgs.push("-map", "0:v?");
-  for (const plan of audioPlans) muxArgs.push("-map", `${plan.idx + 1}:a:0`);
+  audioPlans.forEach((_, idx) => muxArgs.push("-map", `${idx + 1}:a:0`));
   muxArgs.push("-map", "0:s?", "-map", "0:t?", "-map", "0:d?", "-map_chapters", "0", "-map_metadata", "0", "-c", "copy");
-  for (const plan of audioPlans) muxArgs.push(`-metadata:s:a:${plan.idx}`, q(`language=${plan.language}`));
+  audioPlans.forEach((plan, idx) => muxArgs.push(`-metadata:s:a:${idx}`, q(`language=${plan.language}`)));
   muxArgs.push(q(outputFilePath));
   const mux = muxArgs.join(" ");
 
@@ -245,7 +278,7 @@ const plugin = async (args) => {
   args.jobLog(useGpuSourcePort
     ? "Running GPU normalize: FFmpeg decode -> CUDA loudness/gain plan+apply -> FFmpeg encode/mux"
     : "Running GPU normalize: FFmpeg decode -> source-core exact gains -> CUDA apply -> FFmpeg encode/mux");
-  args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")}`);
+  args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")} ensure_stereo=${ensureStereo ? "true" : "false"}`);
   const cli = new CLI({
     cli: writeRunner(workDir),
     spawnArgs: [script],
