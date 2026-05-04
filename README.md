@@ -14,15 +14,6 @@ FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/
 
 The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream. Long-running decode, GPU normalize, encode, and mux steps report Tdarr worker percentage and ETA updates.
 
-Bundled runtime/source files live under the plugin runtime folder:
-
-```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/compile_cuda_ptx.py
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.cu
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx
-```
-
 ## Runtime Layout
 
 Default runtime paths inside the Tdarr container stay under the same plugin folder:
