@@ -56,7 +56,7 @@ The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` o
 ## Safety Behavior
 
 - `channels=auto` matches each source audio stream's channel count.
-- `ensureStereo=true` is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this Migz-style behavior.
+- `Enable 2-Channel Track` (`ensureStereo=true`) is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this behavior.
 - `requireGpuWorker=true` is enabled by default. If Tdarr schedules the plugin on a `Transcode CPU` worker, the plugin fails fast instead of running GPU work under a CPU-worker slot. Use a Worker Type flow gate or GPU-only worker limits for production flows.
 - Progress and ETA updates are reported directly from decode, GPU normalize, encode, and mux steps.
 - `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
