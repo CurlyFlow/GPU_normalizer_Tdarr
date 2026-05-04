@@ -18,7 +18,7 @@ Tdarr loads the JavaScript entrypoint from the standard CommunityFlowPlugin path
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/index.js
 ```
 
-The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream.
+The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream. Long-running decode, GPU normalize, encode, and mux steps report Tdarr worker percentage and ETA updates.
 
 Bundled runtime/source files live under the plugin runtime folder:
 
@@ -55,6 +55,7 @@ The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` o
 
 - `channels=auto` matches each source audio stream's channel count.
 - `ensureStereo=true` is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this Migz-style behavior.
+- `requireGpuWorker=true` is enabled by default. If Tdarr schedules the plugin on a `Transcode CPU` worker, the plugin fails fast instead of running GPU work under a CPU-worker slot. Use a Worker Type flow gate or GPU-only worker limits for production flows.
 - `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
 - `maxPcmMiB` limits decoded raw PCM per audio stream.
 - If no audio exists, the plugin skips and returns the original file.

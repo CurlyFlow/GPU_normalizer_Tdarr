@@ -4,6 +4,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.plugin = exports.details = void 0;
 
 const fs = require("fs");
+const childProcess = require("child_process");
 
 const FLOW_PLUGINS_ROOT = "/app/server/Tdarr/Plugins/FlowPlugins";
 const PLUGIN_ROOT = `${FLOW_PLUGINS_ROOT}/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0`;
@@ -24,15 +25,11 @@ function requireAny(paths) {
 }
 
 function loadFlowHelpers() {
-  const { CLI } = requireAny([
-    "../../../../FlowHelpers/1.0.0/cliUtils",
-    "../../../FlowHelpers/1.0.0/cliUtils",
-  ]);
   const { getContainer, getFileName, getPluginWorkDir } = requireAny([
     "../../../../FlowHelpers/1.0.0/fileUtils",
     "../../../FlowHelpers/1.0.0/fileUtils",
   ]);
-  return { CLI, getContainer, getFileName, getPluginWorkDir };
+  return { getContainer, getFileName, getPluginWorkDir };
 }
 
 function loadTdarrLib() {
@@ -81,16 +78,152 @@ function langTag(value) {
   return cleaned || "und";
 }
 
-function writeRunner(workDir) {
-  fs.mkdirSync(workDir, { recursive: true });
-  const runnerPath = `${workDir}/gpu-normalize-runner.sh`;
-  fs.writeFileSync(runnerPath, "#!/bin/sh\nexec /bin/bash -lc \"$1\"\n", { mode: 0o755 });
-  fs.chmodSync(runnerPath, 0o755);
-  return runnerPath;
-}
-
 function missingRuntime(label, path) {
   return new Error(`${label} not found: ${path}. Install the GPU loudnorm runtime bundle in the Tdarr container or set the plugin input to the correct path.`);
+}
+
+function formatEta(seconds) {
+  const value = Math.max(0, Math.round(Number.isFinite(seconds) ? seconds : 0));
+  const hrs = Math.floor(value / 3600);
+  const mins = Math.floor((value % 3600) / 60);
+  const secs = value % 60;
+  return `${hrs}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function parseDurationSeconds(inputFileObj) {
+  const ffprobeDuration = (((inputFileObj || {}).ffProbeData || {}).format || {}).duration;
+  const metaDuration = ((inputFileObj || {}).meta || {}).Duration;
+  for (const value of [ffprobeDuration, metaDuration]) {
+    const parsed = Number.parseFloat(String(value));
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function parseTimestampSeconds(value) {
+  const parts = String(value || "").trim().split(":");
+  if (parts.length !== 3) return 0;
+  const hrs = Number.parseFloat(parts[0]);
+  const mins = Number.parseFloat(parts[1]);
+  const secs = Number.parseFloat(parts[2]);
+  if (![hrs, mins, secs].every(Number.isFinite)) return 0;
+  return hrs * 3600 + mins * 60 + secs;
+}
+
+function ffmpegProgressFraction(line, durationSeconds) {
+  if (!(durationSeconds > 0)) return null;
+  const microMatch = String(line).match(/^out_time_(?:us|ms)=([0-9]+)/);
+  if (microMatch) {
+    const seconds = Number.parseInt(microMatch[1], 10) / 1000000;
+    return Math.max(0, Math.min(1, seconds / durationSeconds));
+  }
+  const timeMatch = String(line).match(/^out_time=([^\s]+)/);
+  if (timeMatch) {
+    return Math.max(0, Math.min(1, parseTimestampSeconds(timeMatch[1]) / durationSeconds));
+  }
+  return null;
+}
+
+function gpuProgressFraction(line) {
+  const match = String(line).match(/^tdarr_progress\s+phase=\S+\s+fraction=([0-9.]+)/);
+  if (!match) return null;
+  const parsed = Number.parseFloat(match[1]);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(1, parsed));
+}
+
+function cleanLogText(text) {
+  return String(text || "")
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== "" && !line.startsWith("tdarr_progress ") && !line.startsWith("frame=") && !line.startsWith("fps=") && !line.startsWith("out_time"))
+    .join("\n");
+}
+
+function createProgressUpdater(args, totalWork, baselineSeconds = 0) {
+  const started = Date.now();
+  let lastPercentage = 0;
+  let lastUpdate = 0;
+  let lastEta = null;
+  return (workDone, force = false) => {
+    if (typeof args.updateWorker !== "function" || !(totalWork > 0)) return;
+    const now = Date.now();
+    const percentage = Math.max(lastPercentage, Math.min(99.9, (workDone / totalWork) * 100));
+    if (!force && now - lastUpdate < 1000 && percentage - lastPercentage < 0.1) return;
+    if (percentage <= 0) {
+      const baselineEta = Math.max(0, baselineSeconds);
+      args.updateWorker({ percentage: 0, ETA: formatEta(baselineEta) });
+      lastUpdate = now;
+      lastEta = baselineEta > 0 ? baselineEta : null;
+      return;
+    }
+    const elapsed = (now - started) / 1000;
+    const rateEstimate = (elapsed / percentage) * (100 - percentage);
+    const baselineEstimate = baselineSeconds > 0 ? baselineSeconds * ((100 - percentage) / 100) : 0;
+    const estimate = Math.max(rateEstimate, baselineEstimate);
+    let eta = estimate;
+    if (lastEta !== null) {
+      const sinceLast = Math.max(0, (now - lastUpdate) / 1000);
+      const countdownEta = Math.max(0, lastEta - sinceLast);
+      eta = Math.max(baselineEstimate, Math.min(estimate, countdownEta));
+    }
+    args.updateWorker({ percentage: Number(percentage.toFixed(2)), ETA: formatEta(eta) });
+    lastPercentage = percentage;
+    lastUpdate = now;
+    lastEta = eta;
+  };
+}
+
+function runShell(command, opts) {
+  const args = opts.args;
+  const allowedCodes = opts.allowedCodes || [0];
+  const capturePath = opts.capturePath || "";
+  const parseLine = typeof opts.parseLine === "function" ? opts.parseLine : () => {};
+  const logOnSuccess = opts.logOnSuccess === true;
+  args.jobLog(`Running ${opts.label}`);
+  return new Promise((resolve) => {
+    const outputChunks = [];
+    let lineBuffer = "";
+    const capture = capturePath ? fs.createWriteStream(capturePath, { flags: "w" }) : null;
+    const proc = childProcess.spawn("/bin/bash", ["-lc", command], { stdio: ["ignore", "pipe", "pipe"] });
+    const exitHandler = () => {
+      try { proc.kill("SIGTERM"); } catch (_) { /* noop */ }
+    };
+    process.once("exit", exitHandler);
+    const handleData = (data) => {
+      const text = String(data);
+      if (capture) capture.write(text);
+      outputChunks.push(text);
+      while (outputChunks.join("").length > 100000) outputChunks.shift();
+      if (args.logFullCliOutput === true) args.jobLog(text);
+      lineBuffer += text.replace(/\r/g, "\n");
+      const lines = lineBuffer.split("\n");
+      lineBuffer = lines.pop() || "";
+      lines.forEach(parseLine);
+    };
+    proc.stdout.on("data", handleData);
+    proc.stderr.on("data", handleData);
+    proc.on("error", (err) => {
+      process.removeListener("exit", exitHandler);
+      if (capture) capture.end();
+      args.jobLog(`Error running ${opts.label}: ${err.message}`);
+      resolve({ code: 1, output: outputChunks.join("") });
+    });
+    proc.on("close", (code) => {
+      process.removeListener("exit", exitHandler);
+      if (lineBuffer) parseLine(lineBuffer);
+      if (capture) capture.end();
+      const output = outputChunks.join("");
+      if (!allowedCodes.includes(code)) {
+        args.jobLog(`${opts.label} exited with code ${code}`);
+        const cleaned = cleanLogText(output).slice(-50000);
+        if (cleaned) args.jobLog(cleaned);
+      } else if (logOnSuccess && args.logFullCliOutput !== true) {
+        const cleaned = cleanLogText(output).slice(-50000);
+        if (cleaned) args.jobLog(cleaned);
+      }
+      resolve({ code, output });
+    });
+  });
 }
 
 const details = () => ({
@@ -116,6 +249,7 @@ const details = () => ({
     { label: "PCM Sample Rate", name: "sampleRate", type: "string", defaultValue: "192000", inputUI: { type: "text" }, tooltip: "FFmpeg dynamic loudnorm uses 192000 Hz internally. Keep 192000 for parity." },
     { label: "PCM Channels", name: "channels", type: "string", defaultValue: "auto", inputUI: { type: "text" }, tooltip: "Use auto/source to match each audio stream channel count, or set a fixed channel count." },
     { label: "Ensure Stereo Track", name: "ensureStereo", type: "string", defaultValue: "true", inputUI: { type: "text" }, tooltip: "Migz-style behavior: if the normalized output would have no 2-channel audio track, add a normalized stereo downmix from the first audio stream. Set false to disable." },
+    { label: "Require GPU Worker", name: "requireGpuWorker", type: "string", defaultValue: "true", inputUI: { type: "text" }, tooltip: "Fail fast if Tdarr schedules this plugin on a Transcode CPU worker. Set false only for direct/manual harness tests." },
     { label: "Audio Bitrate", name: "audioBitrate", type: "string", defaultValue: "192k", inputUI: { type: "text" }, tooltip: "AAC bitrate for normalized audio streams." },
     { label: "Max PCM MiB", name: "maxPcmMiB", type: "string", defaultValue: "65536", inputUI: { type: "text" }, tooltip: "Abort if a decoded raw audio stream exceeds this size." },
   ],
@@ -127,11 +261,16 @@ exports.details = details;
 
 const plugin = async (args) => {
   const lib = loadTdarrLib();
-  const { CLI, getContainer, getFileName, getPluginWorkDir } = loadFlowHelpers();
+  const { getContainer, getFileName, getPluginWorkDir } = loadFlowHelpers();
   args.inputs = lib.loadDefaultValues(args.inputs, details);
 
   const streams = (((args.inputFileObj || {}).ffProbeData || {}).streams || []);
   const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
+  const requireGpuWorker = boolInput(args.inputs.requireGpuWorker, true);
+  const workerType = String(args.workerType || "").trim().toLowerCase();
+  if (requireGpuWorker && workerType && workerType !== "transcodegpu") {
+    throw new Error(`GPU Normalize Audio must run on a Transcode GPU worker; Tdarr scheduled workerType=${workerType}. Add a Worker Type gate or disable Transcode CPU workers for this flow.`);
+  }
   if (audioStreams.length === 0) {
     args.jobLog("No audio streams found; skipping GPU normalize.");
     return { outputFileObj: args.inputFileObj, outputNumber: 1, variables: args.variables };
@@ -163,18 +302,8 @@ const plugin = async (args) => {
   const workDir = getPluginWorkDir(args);
   const base = getFileName(args.inputFileObj._id);
   const outputFilePath = `${workDir}/${base}.gpu-normalized.${container}`;
-  const maxGainPython = [
-    "import re, sys",
-    "path=sys.argv[1]; target_i=float(sys.argv[2]); max_gain=float(sys.argv[3])",
-    "text=open(path, 'r', errors='ignore').read()",
-    "m=re.search(r'input_i=([-+0-9.]+)', text)",
-    "if not m: print('GPU normalize: missing input_i in source metrics', file=sys.stderr); raise SystemExit(43)",
-    "input_i=float(m.group(1)); gain_needed=target_i-input_i",
-    "print(f'GPU normalize gain_needed={gain_needed:.2f} LU max_gain={max_gain:.2f} LU', file=sys.stderr)",
-    "raise SystemExit(0 if gain_needed <= max_gain else 42)",
-  ].join("\n");
   const copyOriginal = [
-    q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-i", q(args.inputFileObj._id),
+    q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y", "-i", q(args.inputFileObj._id),
     "-map", "0", "-map_chapters", "0", "-map_metadata", "0", "-c", "copy", q(outputFilePath),
   ].join(" ");
 
@@ -209,56 +338,17 @@ const plugin = async (args) => {
       normalizedAudio: `${workDir}/${base}.gpu-normalized.stereo.m4a`,
     });
   }
+  const durationSeconds = parseDurationSeconds(args.inputFileObj) || 1;
+  for (const plan of audioPlans) plan.work = Math.max(1, durationSeconds * plan.channels);
+  const audioWork = audioPlans.reduce((sum, plan) => sum + plan.work, 0);
+  const muxWork = Math.max(1, audioWork * 0.03);
+  const totalWork = audioWork + muxWork;
+  const baselineEtaSeconds = Math.max(5, totalWork / 90);
+  const updateProgress = createProgressUpdater(args, totalWork, baselineEtaSeconds);
   const allIntermediateFiles = audioPlans.flatMap((plan) => [plan.rawInput, plan.gains, plan.sourceErr, plan.rawGpu, plan.normalizedAudio]);
   const cleanupAll = `rm -f ${allIntermediateFiles.map(q).join(" ")}`;
-  const perAudioScripts = [];
-  for (const plan of audioPlans) {
-    const decode = [
-      q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-i", q(args.inputFileObj._id),
-      "-map", `0:a:${plan.sourceIdx}`, "-vn", "-sn", "-dn", "-ac", String(plan.channels), "-ar", String(sampleRate), "-f", "f32le", q(plan.rawInput),
-    ].join(" ");
-    const source = [q(sourceCorePath), "--stream", q(plan.rawInput), "-", String(sampleRate), String(plan.channels), q(plan.gains), String(targetI), String(targetLra), String(targetTp), "2>", q(plan.sourceErr)].join(" ");
-    const gpuPlan = [
-      q(gpuPlanCorePath), q(plan.rawInput), q(plan.rawGpu),
-      "--rate", String(sampleRate), "--channels", String(plan.channels),
-      "--target-i", String(targetI), "--target-lra", String(targetLra), "--target-tp", String(targetTp),
-      "--max-gain-db", String(maxGain), "--chunk-mib", q(gpuChunkMiB), "--max-pcm-mib", String(maxPcmMiB),
-      "--ptx-path", q(`${RUNTIME_CUDA}/loudnorm_source_port_kernels.ptx`), "--source-core-path", q(sourceCorePath),
-      "2>", q(plan.sourceErr),
-    ].join(" ");
-    const sourceGate = maxGain > 0 ? ["python3", "-c", q(maxGainPython), q(plan.sourceErr), String(targetI), String(maxGain)].join(" ") : "true";
-    const apply = [q(gpuApplyPath), q(plan.rawInput), q(plan.gains), q(plan.rawGpu), "--chunk-mib", q(gpuChunkMiB)].join(" ");
-    const encode = [
-      q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-f", "f32le", "-ac", String(plan.channels), "-ar", String(sampleRate),
-      "-i", q(plan.rawGpu), "-c:a", "aac", "-b:a", q(audioBitrate), q(plan.normalizedAudio),
-    ].join(" ");
-    const cleanupRaw = `rm -f ${[plan.rawInput, plan.gains, plan.sourceErr, plan.rawGpu].map(q).join(" ")}`;
-    const sourceExactScript = [
-      source,
-      `cat ${q(plan.sourceErr)} >&2`,
-      `if ! ${sourceGate}; then echo 'GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
-      apply,
-    ];
-    const gpuPlanScript = [
-      "set +e",
-      gpuPlan,
-      "gpu_rc=$?",
-      "set -e",
-      `cat ${q(plan.sourceErr)} >&2`,
-      `if [ "$gpu_rc" -eq 42 ]; then echo 'GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
-      `test "$gpu_rc" -eq 0`,
-    ];
-    perAudioScripts.push(
-      `echo 'GPU normalize audio stream ${plan.sourceIdx}${plan.stereoFallback ? " stereo fallback" : ""}: channels=${plan.channels} language=${plan.language}' >&2`,
-      decode,
-      `bytes=$(wc -c < ${q(plan.rawInput)}); if [ "$bytes" -gt ${maxBytes} ]; then echo 'GPU normalize PCM guard exceeded on audio stream ${plan.sourceIdx}: bytes='"$bytes"' max=${maxBytes}' >&2; exit 1; fi`,
-      ...(useGpuSourcePort ? gpuPlanScript : sourceExactScript),
-      encode,
-      cleanupRaw,
-    );
-  }
 
-  const muxArgs = [q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-y", "-i", q(args.inputFileObj._id)];
+  const muxArgs = [q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y", "-i", q(args.inputFileObj._id)];
   for (const plan of audioPlans) muxArgs.push("-i", q(plan.normalizedAudio));
   muxArgs.push("-map", "0:v?");
   audioPlans.forEach((_, idx) => muxArgs.push("-map", `${idx + 1}:a:0`));
@@ -267,32 +357,128 @@ const plugin = async (args) => {
   muxArgs.push(q(outputFilePath));
   const mux = muxArgs.join(" ");
 
-  const script = [
-    "set -euo pipefail",
-    `${cleanupAll}; rm -f ${q(outputFilePath)}`,
-    ...perAudioScripts,
-    mux,
-    `test -s ${q(outputFilePath)}`,
-    cleanupAll,
-  ].join("; ");
+  const runChecked = async (command, opts) => {
+    const res = await runShell(command, { args, ...opts });
+    if (!(opts.allowedCodes || [0]).includes(res.code)) throw new Error(`${opts.label} failed`);
+    return res;
+  };
+
+  const copyOriginalPackage = async (reason, progressBase) => {
+    args.jobLog(reason);
+    await runChecked(copyOriginal, {
+      label: "copy original package",
+      parseLine: (line) => {
+        const fraction = ffmpegProgressFraction(line, durationSeconds);
+        if (fraction !== null) updateProgress(progressBase + (totalWork - progressBase) * fraction);
+      },
+    });
+    await runChecked(cleanupAll, { label: "cleanup GPU normalize intermediates" });
+    if (typeof args.updateWorker === "function") args.updateWorker({ percentage: 100, ETA: "0:00:00" });
+    return { outputFileObj: { _id: outputFilePath }, outputNumber: 1, variables: args.variables };
+  };
 
   args.jobLog(useGpuSourcePort
     ? "Running GPU normalize: FFmpeg decode -> CUDA loudness/gain plan+apply -> FFmpeg encode/mux"
     : "Running GPU normalize: FFmpeg decode -> source-core exact gains -> CUDA apply -> FFmpeg encode/mux");
+  args.jobLog(`GPU normalize Tdarr worker: worker_type=${workerType || "unknown"} require_gpu_worker=${requireGpuWorker ? "true" : "false"}`);
   args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")} ensure_stereo=${ensureStereo ? "true" : "false"}`);
-  const cli = new CLI({
-    cli: writeRunner(workDir),
-    spawnArgs: [script],
-    spawnOpts: {},
-    jobLog: args.jobLog,
-    outputFilePath,
-    inputFileObj: args.inputFileObj,
-    logFullCliOutput: args.logFullCliOutput,
-    updateWorker: args.updateWorker,
-    args,
+
+  await runChecked(`${cleanupAll}; rm -f ${q(outputFilePath)}`, { label: "cleanup previous GPU normalize outputs" });
+  let completedWork = 0;
+  updateProgress(0, true);
+  for (const plan of audioPlans) {
+    const planLabel = `audio stream ${plan.sourceIdx}${plan.stereoFallback ? " stereo fallback" : ""}`;
+    args.jobLog(`GPU normalize ${planLabel}: channels=${plan.channels} language=${plan.language}`);
+    const decodeSpan = plan.work * 0.08;
+    const normalizeSpan = plan.work * 0.72;
+    const encodeSpan = plan.work * 0.2;
+    const decode = [
+      q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y", "-i", q(args.inputFileObj._id),
+      "-map", `0:a:${plan.sourceIdx}`, "-vn", "-sn", "-dn", "-ac", String(plan.channels), "-ar", String(sampleRate), "-f", "f32le", q(plan.rawInput),
+    ].join(" ");
+    await runChecked(decode, {
+      label: `decode ${planLabel}`,
+      parseLine: (line) => {
+        const fraction = ffmpegProgressFraction(line, durationSeconds);
+        if (fraction !== null) updateProgress(completedWork + decodeSpan * fraction);
+      },
+    });
+    updateProgress(completedWork + decodeSpan, true);
+    const decodedBytes = fs.statSync(plan.rawInput).size;
+    if (decodedBytes > maxBytes) throw new Error(`GPU normalize PCM guard exceeded on audio stream ${plan.sourceIdx}: bytes=${decodedBytes} max=${maxBytes}`);
+
+    if (useGpuSourcePort) {
+      const gpuPlan = [
+        q(gpuPlanCorePath), q(plan.rawInput), q(plan.rawGpu),
+        "--rate", String(sampleRate), "--channels", String(plan.channels),
+        "--target-i", String(targetI), "--target-lra", String(targetLra), "--target-tp", String(targetTp),
+        "--max-gain-db", String(maxGain), "--chunk-mib", q(gpuChunkMiB), "--max-pcm-mib", String(maxPcmMiB),
+        "--ptx-path", q(`${RUNTIME_CUDA}/loudnorm_source_port_kernels.ptx`), "--source-core-path", q(sourceCorePath),
+      ].join(" ");
+      const gpuRes = await runShell(gpuPlan, {
+        args,
+        label: `GPU normalize ${planLabel}`,
+        allowedCodes: [0, 42],
+        capturePath: plan.sourceErr,
+        logOnSuccess: true,
+        parseLine: (line) => {
+          const fraction = gpuProgressFraction(line);
+          if (fraction !== null) updateProgress(completedWork + decodeSpan + normalizeSpan * fraction);
+        },
+      });
+      if (gpuRes.code === 42) {
+        return copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + decodeSpan + normalizeSpan);
+      }
+      if (gpuRes.code !== 0) throw new Error(`GPU normalize failed on ${planLabel}`);
+    } else {
+      const source = [q(sourceCorePath), "--stream", q(plan.rawInput), "-", String(sampleRate), String(plan.channels), q(plan.gains), String(targetI), String(targetLra), String(targetTp)].join(" ");
+      const sourceRes = await runChecked(source, {
+        label: `source-core gains ${planLabel}`,
+        capturePath: plan.sourceErr,
+        logOnSuccess: true,
+      });
+      const inputMatch = sourceRes.output.match(/input_i=([-+0-9.]+)/);
+      if (maxGain > 0) {
+        if (!inputMatch) throw new Error("GPU normalize: missing input_i in source metrics");
+        const gainNeeded = targetI - Number.parseFloat(inputMatch[1]);
+        args.jobLog(`GPU normalize gain_needed=${gainNeeded.toFixed(2)} LU max_gain=${maxGain.toFixed(2)} LU`);
+        if (gainNeeded > maxGain) {
+          return copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + decodeSpan + normalizeSpan);
+        }
+      }
+      const apply = [q(gpuApplyPath), q(plan.rawInput), q(plan.gains), q(plan.rawGpu), "--chunk-mib", q(gpuChunkMiB)].join(" ");
+      updateProgress(completedWork + decodeSpan + normalizeSpan * 0.65, true);
+      await runChecked(apply, { label: `GPU apply ${planLabel}`, logOnSuccess: true });
+    }
+    updateProgress(completedWork + decodeSpan + normalizeSpan, true);
+
+    const encode = [
+      q(args.ffmpegPath), "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y", "-f", "f32le", "-ac", String(plan.channels), "-ar", String(sampleRate),
+      "-i", q(plan.rawGpu), "-c:a", "aac", "-b:a", q(audioBitrate), q(plan.normalizedAudio),
+    ].join(" ");
+    await runChecked(encode, {
+      label: `encode ${planLabel}`,
+      parseLine: (line) => {
+        const fraction = ffmpegProgressFraction(line, durationSeconds);
+        if (fraction !== null) updateProgress(completedWork + decodeSpan + normalizeSpan + encodeSpan * fraction);
+      },
+    });
+    const cleanupRaw = `rm -f ${[plan.rawInput, plan.gains, plan.sourceErr, plan.rawGpu].map(q).join(" ")}`;
+    await runChecked(cleanupRaw, { label: `cleanup ${planLabel}` });
+    completedWork += plan.work;
+    updateProgress(completedWork, true);
+  }
+
+  await runChecked(mux, {
+    label: "mux normalized audio streams",
+    parseLine: (line) => {
+      const fraction = ffmpegProgressFraction(line, durationSeconds);
+      if (fraction !== null) updateProgress(completedWork + muxWork * fraction);
+    },
   });
-  const res = await cli.runCli();
-  if (res.cliExitCode !== 0) throw new Error("GPU normalize failed");
+  await runChecked(`test -s ${q(outputFilePath)}`, { label: "verify GPU normalize output" });
+  await runChecked(cleanupAll, { label: "cleanup GPU normalize intermediates" });
+  if (typeof args.updateWorker === "function") args.updateWorker({ percentage: 100, ETA: "0:00:00" });
   return { outputFileObj: { _id: outputFilePath }, outputNumber: 1, variables: args.variables };
 };
 exports.plugin = plugin;

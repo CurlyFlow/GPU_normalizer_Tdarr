@@ -19,6 +19,11 @@ RUNTIME_BIN = os.path.join(RUNTIME_ROOT, 'bin')
 RUNTIME_CUDA = os.path.join(RUNTIME_ROOT, 'cuda')
 
 
+def emit_tdarr_progress(phase, fraction):
+    value = min(1.0, max(0.0, float(fraction)))
+    print(f'tdarr_progress phase={phase} fraction={value:.6f}', file=sys.stderr, flush=True)
+
+
 PTX = r'''
 .version 6.4
 .target sm_61
@@ -640,6 +645,7 @@ def main():
     windows = (total_frames + frames_per_window - 1) // frames_per_window
     seconds = total_frames / float(args.rate)
     if seconds < 30.0:
+        emit_tdarr_progress('short_source_exact', 0.01)
         source_core = args.source_core_path
         if not os.path.exists(source_core):
             raise SystemExit(f'short source-exact core not found: {source_core}')
@@ -674,6 +680,7 @@ def main():
         print(f'audio_seconds={seconds:.3f} rate={args.rate} channels={args.channels} windows={windows} pcm_mib={mib:.1f} chunk_mib=0.0', file=sys.stderr)
         print(f'target_i={args.target_i:.2f} target_lra={args.target_lra:.2f} target_tp={args.target_tp:.2f} effective_tp={args.target_tp:.2f} max_gain_db={args.max_gain_db:.2f}', file=sys.stderr)
         print(f'planner=short_source_exact_cpu_core elapsed_sec={elapsed:.3f} realtime_x={seconds/elapsed if elapsed > 0 else 0:.1f}', file=sys.stderr)
+        emit_tdarr_progress('short_source_exact', 1.0)
         return
     effective_tp = args.target_tp - max(0.0, args.codec_headroom_db)
     ceiling = db_to_amp(effective_tp)
@@ -777,6 +784,7 @@ def main():
                     done_bytes += this_bytes
                     frame_offset += this_frames
                     chunks += 1
+                    emit_tdarr_progress('stats_q', 0.35 * (done_bytes / float(nbytes)))
 
             t0 = time.perf_counter()
             q_states = array.array('d', [0.0]) * (windows * args.channels * 4)
@@ -837,6 +845,7 @@ def main():
                     stats_time += dt
                     done_bytes += this_bytes
                     frame_offset += this_frames
+                    emit_tdarr_progress('stats_sums', 0.35 + 0.35 * (done_bytes / float(nbytes)))
 
             window_sums = array.array('f', [0.0]) * windows
             chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(window_sums.buffer_info()[0]), d_sums, windows * 4), 'cuMemcpyDtoH(sums)')
@@ -852,6 +861,7 @@ def main():
             chk(cuda.cuLaunchKernel(gain_fn, 1, 1, 1, 1, 1, 1, 0, None, gain_args, None), 'cuLaunchKernel(source-port-gain)')
             chk(cuda.cuCtxSynchronize(), 'cuCtxSynchronize(gain)')
             gain_time = time.perf_counter() - t0
+            emit_tdarr_progress('gain_plan', 0.75)
 
             gains = array.array('f', [0.0]) * windows
             chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(gains.buffer_info()[0]), d_gains, windows * 4), 'cuMemcpyDtoH(gains)')
@@ -886,6 +896,7 @@ def main():
                     fo.write(memoryview(host_out)[:this_bytes])
                     done_bytes += this_bytes
                     frame_offset += this_frames
+                    emit_tdarr_progress('apply', 0.75 + 0.25 * (done_bytes / float(nbytes)))
         finally:
             for ptr in [d_hist_energies, d_start_states, d_q_states, d_a, d_b, d_gains, d_peaks, d_sums, d_out, d_in]:
                 if ptr.value:
