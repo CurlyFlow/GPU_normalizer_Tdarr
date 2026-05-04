@@ -1,5 +1,7 @@
 # GPU Normalizer Tdarr
 
+It. Cant. Be done. They said. 
+
 GPU Normalize Audio is a Tdarr FlowPlugin plus CUDA runtime for FFmpeg `loudnorm`-style audio normalization.
 
 Everything that belongs to the plugin lives in one directory:
