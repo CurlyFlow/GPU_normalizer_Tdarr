@@ -34,6 +34,3 @@ bench/results/
 *.mov
 *.mp4
 *.mkv
-
-# Local diagnostic binaries built from scripts/*.c
-scripts/scan_raw_offset

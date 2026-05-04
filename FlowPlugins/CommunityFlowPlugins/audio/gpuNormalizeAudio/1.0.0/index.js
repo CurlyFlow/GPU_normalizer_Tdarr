@@ -69,21 +69,21 @@ function langTag(value) {
 
 function writeRunner(workDir) {
   fs.mkdirSync(workDir, { recursive: true });
-  const runnerPath = `${workDir}/opx-gpu-normalize-runner.sh`;
+  const runnerPath = `${workDir}/gpu-normalize-runner.sh`;
   fs.writeFileSync(runnerPath, "#!/bin/sh\nexec /bin/bash -lc \"$1\"\n", { mode: 0o755 });
   fs.chmodSync(runnerPath, 0o755);
   return runnerPath;
 }
 
 function missingRuntime(label, path) {
-  return new Error(`${label} not found: ${path}. Install the OPX GPU loudnorm runtime bundle in the Tdarr container or set the plugin input to the correct path.`);
+  return new Error(`${label} not found: ${path}. Install the GPU loudnorm runtime bundle in the Tdarr container or set the plugin input to the correct path.`);
 }
 
 const details = () => ({
-  name: "OPX GPU Normalize Audio",
+  name: "GPU Normalize Audio",
   description: "Normalize all audio streams with FFmpeg loudnorm-compatible planning and GPU-assisted rendering, then mux them back while preserving video, subtitle, attachment, data, chapters, and metadata.",
   style: { borderColor: "#38bdf8" },
-  tags: "video,audio,normalize,loudnorm,gpu,opx",
+  tags: "video,audio,normalize,loudnorm,gpu",
   isStartPlugin: false,
   pType: "",
   requiresVersion: "2.11.01",
@@ -91,9 +91,9 @@ const details = () => ({
   icon: "faVolumeUp",
   inputs: [
     { label: "Planner Mode", name: "plannerMode", type: "string", defaultValue: "sourceExact", inputUI: { type: "text" }, tooltip: "sourceExact uses the exact source-core planner with GPU apply. gpuSourcePort uses the CUDA source-port planner and apply path." },
-    { label: "Source Core Path", name: "sourceCorePath", type: "string", defaultValue: "/app/server/opx/bin/opx-loudnorm-source-cpu.plugin-dev", inputUI: { type: "text" }, tooltip: "Path to the FFmpeg-source loudnorm planning core inside the Tdarr container." },
-    { label: "GPU Plan Core Path", name: "gpuPlanCorePath", type: "string", defaultValue: "/app/server/opx/bin/opx-loudnorm-gpu-source-port", inputUI: { type: "text" }, tooltip: "Path to the CUDA source-port loudness/gain planner inside the Tdarr container." },
-    { label: "GPU Apply Path", name: "gpuApplyPath", type: "string", defaultValue: "/app/server/opx/bin/opx-gpu-apply-sample-gains", inputUI: { type: "text" }, tooltip: "Path to the CUDA per-sample gain renderer used by sourceExact mode." },
+    { label: "Source Core Path", name: "sourceCorePath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/loudnorm-source-cpu", inputUI: { type: "text" }, tooltip: "Path to the FFmpeg-source loudnorm planning core inside the Tdarr container." },
+    { label: "GPU Plan Core Path", name: "gpuPlanCorePath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/loudnorm-gpu-source-port", inputUI: { type: "text" }, tooltip: "Path to the CUDA source-port loudness/gain planner inside the Tdarr container." },
+    { label: "GPU Apply Path", name: "gpuApplyPath", type: "string", defaultValue: "/app/server/gpu-normalizer/bin/gpu-apply-sample-gains", inputUI: { type: "text" }, tooltip: "Path to the CUDA per-sample gain renderer used by sourceExact mode." },
     { label: "GPU Chunk MiB", name: "gpuChunkMiB", type: "string", defaultValue: "64", inputUI: { type: "text" }, tooltip: "Input/gain/output chunk size used by the GPU runtime." },
     { label: "Integrated Loudness I", name: "i", type: "string", defaultValue: "-18.0", inputUI: { type: "text" }, tooltip: "FFmpeg loudnorm I target in LUFS." },
     { label: "Loudness Range LRA", name: "lra", type: "string", defaultValue: "7.0", inputUI: { type: "text" }, tooltip: "FFmpeg loudnorm LRA target in LU." },
@@ -118,21 +118,21 @@ const plugin = async (args) => {
   const streams = (((args.inputFileObj || {}).ffProbeData || {}).streams || []);
   const audioStreams = streams.filter((stream) => stream.codec_type === "audio");
   if (audioStreams.length === 0) {
-    args.jobLog("No audio streams found; skipping OPX GPU normalize.");
+    args.jobLog("No audio streams found; skipping GPU normalize.");
     return { outputFileObj: args.inputFileObj, outputNumber: 1, variables: args.variables };
   }
 
   const plannerMode = String(args.inputs.plannerMode || "sourceExact").trim();
   const useGpuSourcePort = plannerMode === "gpuSourcePort";
-  const sourceCorePath = String(args.inputs.sourceCorePath || "/app/server/opx/bin/opx-loudnorm-source-cpu.plugin-dev").trim();
-  const gpuPlanCorePath = String(args.inputs.gpuPlanCorePath || "/app/server/opx/bin/opx-loudnorm-gpu-source-port").trim();
-  const gpuApplyPath = String(args.inputs.gpuApplyPath || "/app/server/opx/bin/opx-gpu-apply-sample-gains").trim();
+  const sourceCorePath = String(args.inputs.sourceCorePath || "/app/server/gpu-normalizer/bin/loudnorm-source-cpu").trim();
+  const gpuPlanCorePath = String(args.inputs.gpuPlanCorePath || "/app/server/gpu-normalizer/bin/loudnorm-gpu-source-port").trim();
+  const gpuApplyPath = String(args.inputs.gpuApplyPath || "/app/server/gpu-normalizer/bin/gpu-apply-sample-gains").trim();
   const gpuChunkMiB = String(args.inputs.gpuChunkMiB || "64").trim();
   if (useGpuSourcePort) {
-    if (!fs.existsSync(gpuPlanCorePath)) throw missingRuntime("OPX GPU plan core", gpuPlanCorePath);
+    if (!fs.existsSync(gpuPlanCorePath)) throw missingRuntime("GPU plan core", gpuPlanCorePath);
   } else {
-    if (!fs.existsSync(sourceCorePath)) throw missingRuntime("OPX source core", sourceCorePath);
-    if (!fs.existsSync(gpuApplyPath)) throw missingRuntime("OPX GPU apply", gpuApplyPath);
+    if (!fs.existsSync(sourceCorePath)) throw missingRuntime("Source core", sourceCorePath);
+    if (!fs.existsSync(gpuApplyPath)) throw missingRuntime("GPU apply", gpuApplyPath);
   }
 
   const sampleRate = intNum(args.inputs.sampleRate, 192000);
@@ -146,15 +146,15 @@ const plugin = async (args) => {
   const container = getContainer(args.inputFileObj._id);
   const workDir = getPluginWorkDir(args);
   const base = getFileName(args.inputFileObj._id);
-  const outputFilePath = `${workDir}/${base}.opx-gpu-normalized.${container}`;
+  const outputFilePath = `${workDir}/${base}.gpu-normalized.${container}`;
   const maxGainPython = [
     "import re, sys",
     "path=sys.argv[1]; target_i=float(sys.argv[2]); max_gain=float(sys.argv[3])",
     "text=open(path, 'r', errors='ignore').read()",
     "m=re.search(r'input_i=([-+0-9.]+)', text)",
-    "if not m: print('OPX GPU normalize: missing input_i in source metrics', file=sys.stderr); raise SystemExit(43)",
+    "if not m: print('GPU normalize: missing input_i in source metrics', file=sys.stderr); raise SystemExit(43)",
     "input_i=float(m.group(1)); gain_needed=target_i-input_i",
-    "print(f'OPX GPU normalize gain_needed={gain_needed:.2f} LU max_gain={max_gain:.2f} LU', file=sys.stderr)",
+    "print(f'GPU normalize gain_needed={gain_needed:.2f} LU max_gain={max_gain:.2f} LU', file=sys.stderr)",
     "raise SystemExit(0 if gain_needed <= max_gain else 42)",
   ].join("\n");
   const copyOriginal = [
@@ -169,11 +169,11 @@ const plugin = async (args) => {
       idx,
       channels: streamChannels,
       language: langTag((stream.tags || {}).language || stream.language || "und"),
-      rawInput: `${workDir}/${base}.opx-gpu.${suffix}.input.f32`,
-      gains: `${workDir}/${base}.opx-gpu.${suffix}.gains.f32`,
-      sourceErr: `${workDir}/${base}.opx-gpu.${suffix}.source.err`,
-      rawGpu: `${workDir}/${base}.opx-gpu.${suffix}.output.f32`,
-      normalizedAudio: `${workDir}/${base}.opx-gpu-normalized.${suffix}.m4a`,
+      rawInput: `${workDir}/${base}.gpu-normalize.${suffix}.input.f32`,
+      gains: `${workDir}/${base}.gpu-normalize.${suffix}.gains.f32`,
+      sourceErr: `${workDir}/${base}.gpu-normalize.${suffix}.source.err`,
+      rawGpu: `${workDir}/${base}.gpu-normalize.${suffix}.output.f32`,
+      normalizedAudio: `${workDir}/${base}.gpu-normalized.${suffix}.m4a`,
     };
   });
   const allIntermediateFiles = audioPlans.flatMap((plan) => [plan.rawInput, plan.gains, plan.sourceErr, plan.rawGpu, plan.normalizedAudio]);
@@ -202,22 +202,22 @@ const plugin = async (args) => {
     const sourceExactScript = [
       source,
       `cat ${q(plan.sourceErr)} >&2`,
-      `if ! ${sourceGate}; then echo 'OPX GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
+      `if ! ${sourceGate}; then echo 'GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
       apply,
     ];
     const gpuPlanScript = [
       "set +e",
       gpuPlan,
-      "opx_rc=$?",
+      "gpu_rc=$?",
       "set -e",
       `cat ${q(plan.sourceErr)} >&2`,
-      `if [ "$opx_rc" -eq 42 ]; then echo 'OPX GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
-      `test "$opx_rc" -eq 0`,
+      `if [ "$gpu_rc" -eq 42 ]; then echo 'GPU normalize gain gate exceeded on audio stream ${plan.idx}; copying original package'; ${copyOriginal}; ${cleanupAll}; exit 0; fi`,
+      `test "$gpu_rc" -eq 0`,
     ];
     perAudioScripts.push(
-      `echo 'OPX GPU normalize audio stream ${plan.idx}: channels=${plan.channels} language=${plan.language}' >&2`,
+      `echo 'GPU normalize audio stream ${plan.idx}: channels=${plan.channels} language=${plan.language}' >&2`,
       decode,
-      `bytes=$(wc -c < ${q(plan.rawInput)}); if [ "$bytes" -gt ${maxBytes} ]; then echo 'OPX GPU normalize PCM guard exceeded on audio stream ${plan.idx}: bytes='"$bytes"' max=${maxBytes}' >&2; exit 1; fi`,
+      `bytes=$(wc -c < ${q(plan.rawInput)}); if [ "$bytes" -gt ${maxBytes} ]; then echo 'GPU normalize PCM guard exceeded on audio stream ${plan.idx}: bytes='"$bytes"' max=${maxBytes}' >&2; exit 1; fi`,
       ...(useGpuSourcePort ? gpuPlanScript : sourceExactScript),
       encode,
       cleanupRaw,
@@ -243,9 +243,9 @@ const plugin = async (args) => {
   ].join("; ");
 
   args.jobLog(useGpuSourcePort
-    ? "Running OPX GPU normalize: FFmpeg decode -> CUDA loudness/gain plan+apply -> FFmpeg encode/mux"
-    : "Running OPX GPU normalize: FFmpeg decode -> source-core exact gains -> CUDA apply -> FFmpeg encode/mux");
-  args.jobLog(`OPX GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")}`);
+    ? "Running GPU normalize: FFmpeg decode -> CUDA loudness/gain plan+apply -> FFmpeg encode/mux"
+    : "Running GPU normalize: FFmpeg decode -> source-core exact gains -> CUDA apply -> FFmpeg encode/mux");
+  args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")}`);
   const cli = new CLI({
     cli: writeRunner(workDir),
     spawnArgs: [script],
@@ -258,7 +258,7 @@ const plugin = async (args) => {
     args,
   });
   const res = await cli.runCli();
-  if (res.cliExitCode !== 0) throw new Error("OPX GPU normalize failed");
+  if (res.cliExitCode !== 0) throw new Error("GPU normalize failed");
   return { outputFileObj: { _id: outputFilePath }, outputNumber: 1, variables: args.variables };
 };
 exports.plugin = plugin;

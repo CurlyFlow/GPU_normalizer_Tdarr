@@ -1,8 +1,17 @@
 import ctypes
+import ctypes.util
+import os
 import sys
 from pathlib import Path
 
-NVRTC = '/tmp/opencode/cuda-py/nvidia/cuda_nvrtc/lib/libnvrtc.so.12'
+NVRTC = os.environ.get('NVRTC_LIB') or ctypes.util.find_library('nvrtc')
+if not NVRTC:
+    for candidate in ('libnvrtc.so', 'libnvrtc.so.12'):
+        if Path(candidate).exists():
+            NVRTC = candidate
+            break
+if not NVRTC:
+    raise RuntimeError('Unable to find NVRTC. Set NVRTC_LIB=/path/to/libnvrtc.so')
 
 src_path = Path(sys.argv[1])
 out_path = Path(sys.argv[2])

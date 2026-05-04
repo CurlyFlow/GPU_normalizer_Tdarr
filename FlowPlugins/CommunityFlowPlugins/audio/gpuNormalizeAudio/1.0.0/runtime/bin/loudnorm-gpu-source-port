@@ -600,7 +600,7 @@ def build_source_port_gains(window_sums, window_peaks, frames_per_window, target
 
 
 def main():
-    parser = argparse.ArgumentParser(description='OPX dev CUDA loudness/gain-plan prototype for raw f32le PCM')
+    parser = argparse.ArgumentParser(description='CUDA loudness/gain planner and renderer for raw f32le PCM')
     parser.add_argument('input_f32')
     parser.add_argument('output_f32')
     parser.add_argument('--rate', type=int, default=192000)
@@ -613,7 +613,8 @@ def main():
     parser.add_argument('--dynamic-strength', type=float, default=1.0)
     parser.add_argument('--chunk-mib', type=float, default=64.0)
     parser.add_argument('--max-pcm-mib', type=float, default=8192.0)
-    parser.add_argument('--ptx-path', default='/app/server/opx/bin/opx_loudnorm_source_port_kernels.ptx')
+    parser.add_argument('--ptx-path', default='/app/server/gpu-normalizer/bin/loudnorm_source_port_kernels.ptx')
+    parser.add_argument('--source-core-path', default='/app/server/gpu-normalizer/bin/loudnorm-source-cpu')
     parser.add_argument('--dump-window-gains')
     args = parser.parse_args()
 
@@ -632,11 +633,11 @@ def main():
     windows = (total_frames + frames_per_window - 1) // frames_per_window
     seconds = total_frames / float(args.rate)
     if seconds < 30.0:
-        source_core = '/app/server/opx/bin/opx-loudnorm-source-cpu.plugin-dev'
+        source_core = args.source_core_path
         if not os.path.exists(source_core):
             raise SystemExit(f'short source-exact core not found: {source_core}')
         t0 = time.perf_counter()
-        short_gains = f'/tmp/opx_short_source_exact_{os.getpid()}.gains.f32'
+        short_gains = f'/tmp/gpu_normalize_short_source_exact_{os.getpid()}.gains.f32'
         cmd = [source_core, args.input_f32, args.output_f32, str(args.rate), str(args.channels), short_gains, str(args.target_i), str(args.target_lra), str(args.target_tp)]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         source_text = proc.stdout + proc.stderr
@@ -652,13 +653,13 @@ def main():
         if args.max_gain_db > 0:
             if not input_match:
                 sys.stderr.write(source_text)
-                print('OPX exact normalize: missing input_i in short source metrics', file=sys.stderr)
+                print('GPU normalize: missing input_i in short source metrics', file=sys.stderr)
                 raise SystemExit(43)
             input_i = float(input_match.group(1))
             gain_needed = args.target_i - input_i
             print(f'input_i={input_i:.2f} gain_needed={gain_needed:.2f} max_gain_db={args.max_gain_db:.2f}', file=sys.stderr)
             if gain_needed > args.max_gain_db:
-                print('OPX exact normalize gain gate exceeded', file=sys.stderr)
+                print('GPU normalize gain gate exceeded', file=sys.stderr)
                 raise SystemExit(42)
         if args.dump_window_gains:
             open(args.dump_window_gains, 'wb').close()
@@ -836,7 +837,7 @@ def main():
             gain_needed = args.target_i - input_i if math.isfinite(input_i) else float('inf')
             print(f'input_i={input_i:.2f} gain_needed={gain_needed:.2f} max_gain_db={args.max_gain_db:.2f}', file=sys.stderr)
             if args.max_gain_db > 0 and gain_needed > args.max_gain_db:
-                print('OPX exact normalize gain gate exceeded', file=sys.stderr)
+                print('GPU normalize gain gate exceeded', file=sys.stderr)
                 raise SystemExit(42)
 
             gain_args = (ctypes.c_void_p * 9)(ptr_arg(sums_arg), ptr_arg(peaks_arg), ptr_arg(gains_arg), ptr_arg(windows_arg), ptr_arg(frame_window_arg), ptr_arg(target_i_arg), ptr_arg(target_lra_arg), ptr_arg(target_tp_arg), ptr_arg(hist_energies_arg))
