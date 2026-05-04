@@ -1,6 +1,6 @@
-# GPU Normalizer Tdarr
+# GPU Normalize Audio for Tdarr
 
-It. Cant. Be done. They said. 
+It. Can't. Be done. They said.
 
 GPU Normalize Audio is a Tdarr FlowPlugin plus CUDA runtime for FFmpeg `loudnorm`-style audio normalization.
 
@@ -40,9 +40,11 @@ Default runtime paths inside the Tdarr container stay under the same plugin fold
 /app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx
 ```
 
-Install by keeping/copying runtime files under `1.0.0/runtime/`. The plugin inputs still let you override paths if your Tdarr setup needs a different location.
+Install by keeping runtime files under `1.0.0/runtime/`. The plugin inputs still let you override paths if your Tdarr setup needs a different location.
 
-`sourceExact` mode also needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` binaries in `runtime/bin/`. `gpuSourcePort` uses `loudnorm-gpu-source-port` for the main planner/render path and uses `loudnorm-source-cpu` only for the short-file exact fallback.
+This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port`, `compile_cuda_ptx.py`, `loudnorm_source_port_kernels.cu`, and `loudnorm_source_port_kernels.ptx`.
+
+`sourceExact` mode also needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` companion binaries in `runtime/bin/`. `gpuSourcePort` uses `loudnorm-gpu-source-port` for the main planner/render path and uses `loudnorm-source-cpu` only for the short-file exact fallback.
 
 ## Modes
 
@@ -56,6 +58,7 @@ The default mode is `sourceExact` for conservative parity. Use `gpuSourcePort` o
 - `channels=auto` matches each source audio stream's channel count.
 - `ensureStereo=true` is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this Migz-style behavior.
 - `requireGpuWorker=true` is enabled by default. If Tdarr schedules the plugin on a `Transcode CPU` worker, the plugin fails fast instead of running GPU work under a CPU-worker slot. Use a Worker Type flow gate or GPU-only worker limits for production flows.
+- Progress and ETA updates are reported directly from decode, GPU normalize, encode, and mux steps.
 - `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
 - `maxPcmMiB` limits decoded raw PCM per audio stream.
 - If no audio exists, the plugin skips and returns the original file.
