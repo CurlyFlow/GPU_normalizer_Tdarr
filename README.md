@@ -4,9 +4,9 @@ It. Cant. Be done, they said.
 
 Standalone staging repo for the OPX/Tdarr GPU loudnorm source-port normalizer.
 
-## Community Plugin
+## Plugin
 
-Community plugin path:
+Tdarr FlowPlugin path:
 
 ```text
 FlowPlugins/CommunityFlowPlugins/audio/opxGpuNormalizeAudio/1.0.0/index.js
