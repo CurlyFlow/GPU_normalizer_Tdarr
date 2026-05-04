@@ -24,6 +24,9 @@ docs/
 *.swo
 *~
 .DS_Store
+.playwright-mcp/
+socket*.txt
+*.png
 work/
 results/
 bench/results/
