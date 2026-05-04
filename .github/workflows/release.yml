@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Release tags must look like v1.2.3 or v1.2.3-rc.1; got '$tag'." >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          asset="GPU_normalize_audio_tdarr-${version}.zip"
+          prerelease=false
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+          fi
+
+          {
+            echo "version=$version"
+            echo "asset=$asset"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Validate plugin entrypoint
+        run: node --check FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/index.js
+
+      - name: Validate runtime scripts
+        run: python3 -m py_compile FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-gpu-source-port FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/compile_cuda_ptx.py
+
+      - name: Build release package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${{ steps.release.outputs.version }}"
+          asset="${{ steps.release.outputs.asset }}"
+          package_dir="GPU_normalize_audio_tdarr-${version}"
+          staging="$(mktemp -d)"
+
+          source_version="1.0.0"
+          plugin_base="FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio"
+
+          mkdir -p "$staging/$package_dir/$plugin_base"
+          cp -a README.md "$staging/$package_dir/"
+          cp -a \
+            "$plugin_base/$source_version" \
+            "$staging/$package_dir/$plugin_base/$version"
+
+          perl -0pi -e "s#gpuNormalizeAudio/\Q$source_version\E#gpuNormalizeAudio/$version#g" \
+            "$staging/$package_dir/$plugin_base/$version/index.js"
+          perl -0pi -e "s#'gpuNormalizeAudio', '\Q$source_version\E'#'gpuNormalizeAudio', '$version'#g" \
+            "$staging/$package_dir/$plugin_base/$version/runtime/bin/loudnorm-gpu-source-port"
+
+          node --check "$staging/$package_dir/$plugin_base/$version/index.js"
+          python3 -m py_compile \
+            "$staging/$package_dir/$plugin_base/$version/runtime/bin/loudnorm-gpu-source-port" \
+            "$staging/$package_dir/$plugin_base/$version/runtime/cuda/compile_cuda_ptx.py"
+
+          (cd "$staging" && python3 -m zipfile --create "$GITHUB_WORKSPACE/$asset" "$package_dir")
+          sha256sum "$asset" > "$asset.sha256"
+          cat "$asset.sha256"
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          version="${{ steps.release.outputs.version }}"
+          asset="${{ steps.release.outputs.asset }}"
+
+          {
+            printf 'Release for `%s`.\n\n' "$tag"
+            printf 'Install path inside Tdarr:\n\n'
+            printf '```text\n'
+            printf 'FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/%s/\n' "$version"
+            printf '```\n\n'
+            printf 'Attached package: `%s`\n\n' "$asset"
+            printf 'SHA256:\n\n'
+            printf '```text\n'
+            cat "$asset.sha256"
+            printf '```\n'
+          } > RELEASE_NOTES.md
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prerelease_arg=()
+          if [[ "${{ steps.release.outputs.prerelease }}" == "true" ]]; then
+            prerelease_arg=(--prerelease)
+          fi
+
+          gh release create \
+            "${GITHUB_REF_NAME}" \
+            "${{ steps.release.outputs.asset }}" \
+            "${{ steps.release.outputs.asset }}.sha256" \
+            --title "GPU Normalize Audio ${{ steps.release.outputs.version }}" \
+            --notes-file RELEASE_NOTES.md \
+            "${prerelease_arg[@]}"
