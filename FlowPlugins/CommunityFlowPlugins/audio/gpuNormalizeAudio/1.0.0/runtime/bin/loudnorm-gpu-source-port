@@ -12,6 +12,13 @@ import sys
 import time
 
 
+FLOW_PLUGINS_ROOT = '/app/server/Tdarr/Plugins/FlowPlugins'
+PLUGIN_ROOT = os.path.join(FLOW_PLUGINS_ROOT, 'CommunityFlowPlugins', 'audio', 'gpuNormalizeAudio', '1.0.0')
+RUNTIME_ROOT = os.path.join(PLUGIN_ROOT, 'runtime')
+RUNTIME_BIN = os.path.join(RUNTIME_ROOT, 'bin')
+RUNTIME_CUDA = os.path.join(RUNTIME_ROOT, 'cuda')
+
+
 PTX = r'''
 .version 6.4
 .target sm_61
@@ -613,8 +620,8 @@ def main():
     parser.add_argument('--dynamic-strength', type=float, default=1.0)
     parser.add_argument('--chunk-mib', type=float, default=64.0)
     parser.add_argument('--max-pcm-mib', type=float, default=8192.0)
-    parser.add_argument('--ptx-path', default='/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/cuda/loudnorm_source_port_kernels.ptx')
-    parser.add_argument('--source-core-path', default='/app/server/Tdarr/Plugins/FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0.0/runtime/bin/loudnorm-source-cpu')
+    parser.add_argument('--ptx-path', default=os.path.join(RUNTIME_CUDA, 'loudnorm_source_port_kernels.ptx'))
+    parser.add_argument('--source-core-path', default=os.path.join(RUNTIME_BIN, 'loudnorm-source-cpu'))
     parser.add_argument('--dump-window-gains')
     args = parser.parse_args()
 
