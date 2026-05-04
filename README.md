@@ -1,5 +1,6 @@
 # GPU_normalizer_Tdarr
 
+It. Cant. Be done, they said. 
 Standalone staging repo for the OPX/Tdarr GPU loudnorm source-port canary.
 
 ## Current Status
