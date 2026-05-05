@@ -88,11 +88,8 @@ jobs:
           plugin_base="FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio"
           plugin_dir="$plugin_base/$version"
 
-          mkdir -p "$staging/$package_dir/$plugin_base"
-          cp -a README.md "$staging/$package_dir/"
-          cp -a \
-            "$plugin_dir" \
-            "$staging/$package_dir/$plugin_base/$version"
+          mkdir -p "$staging/$package_dir"
+          git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
 
           node --check "$staging/$package_dir/$plugin_base/$version/index.js"
           python3 -m py_compile \
