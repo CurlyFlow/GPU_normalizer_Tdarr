@@ -72,6 +72,7 @@ The default mode is `gpuSourcePort`.
 - `channels=auto` matches each source audio stream's channel count.
 - `Enable 2-Channel Track` (`ensureStereo=true`) is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this behavior.
 - `requireGpuWorker=true` is enabled by default. If Tdarr schedules the plugin on a `Transcode CPU` worker, the plugin fails fast instead of running GPU work under a CPU-worker slot. Use a Worker Type flow gate or GPU-only worker limits for production flows.
+- `Max Concurrent Jobs` defaults to `1`. The plugin uses guarded slot lock directories with heartbeat/stale cleanup so only the configured number of GPU normalize jobs run for the same `Lock File` base path. Set `Max Concurrent Jobs=0` to disable this guard.
 - Progress and ETA updates are reported directly from decode, GPU normalize, encode, and mux steps.
 - `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
 - `maxPcmMiB` limits decoded raw PCM per audio stream.

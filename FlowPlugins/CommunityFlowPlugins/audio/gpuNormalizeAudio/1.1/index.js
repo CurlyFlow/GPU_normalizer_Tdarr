@@ -263,6 +263,149 @@ function runShell(command, opts) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const LOCK_HEARTBEAT_MS = 5 * 60 * 1000;
+const LOCK_STALE_MS = LOCK_HEARTBEAT_MS + 60 * 1000;
+
+function maxConcurrentJobs(value) {
+  const parsed = intNum(value, 1);
+  if (parsed < 0) return 1;
+  return Math.min(parsed, 32);
+}
+
+function holderPidForLock(dir) {
+  try {
+    const firstLine = fs.readFileSync(`${dir}/holder`, "utf8").split(/\r?\n/, 1)[0].trim();
+    const pid = Number.parseInt(firstLine, 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function procStatusPpid(pid) {
+  try {
+    const status = fs.readFileSync(`/proc/${pid}/status`, "utf8");
+    const match = status.match(/^PPid:\s+(\d+)$/m);
+    return match ? Number.parseInt(match[1], 10) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function procCmdline(pid) {
+  try {
+    return fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(/\0/g, " ");
+  } catch (_) {
+    return "";
+  }
+}
+
+function holderHasActiveNormalizeDescendant(holderPid) {
+  try {
+    const ppidByPid = new Map();
+    for (const entry of fs.readdirSync("/proc")) {
+      if (!/^\d+$/.test(entry)) continue;
+      const pid = Number.parseInt(entry, 10);
+      const ppid = procStatusPpid(pid);
+      if (ppid !== null) ppidByPid.set(pid, ppid);
+    }
+    const isDescendant = (pid) => {
+      let current = pid;
+      for (let depth = 0; depth < 32; depth += 1) {
+        const ppid = ppidByPid.get(current);
+        if (ppid === holderPid) return true;
+        if (!ppid || ppid === current) return false;
+        current = ppid;
+      }
+      return false;
+    };
+    for (const pid of ppidByPid.keys()) {
+      if (!isDescendant(pid)) continue;
+      const cmdline = procCmdline(pid);
+      if (cmdline.includes("tdarr-ffmpeg") || cmdline.includes("loudnorm") || cmdline.includes("gpu-normalize") || cmdline.includes("loudnorm-gpu-source-port")) return true;
+    }
+  } catch (_) {
+    return false;
+  }
+  return false;
+}
+
+async function acquireConcurrencyLock(args, lockFileInput, maxConcurrentInput) {
+  const maxConcurrent = maxConcurrentJobs(maxConcurrentInput);
+  if (maxConcurrent === 0) {
+    args.jobLog("GPU normalize guarded lock disabled: max_concurrent=0");
+    return () => {};
+  }
+  const base = String(lockFileInput || "/tmp/opx_tdarr_gpu_normalize.lock").trim() || "/tmp/opx_tdarr_gpu_normalize.lock";
+  while (true) {
+    for (let slot = 1; slot <= maxConcurrent; slot += 1) {
+      const dir = `${base}.slot${slot}.lockdir`;
+      try {
+        fs.mkdirSync(dir);
+        const writeHeartbeat = () => {
+          const stamp = `${process.pid}\n${new Date().toISOString()}\nslot=${slot}\nmax=${maxConcurrent}\n`;
+          fs.writeFileSync(`${dir}/holder`, stamp);
+          fs.writeFileSync(`${dir}/heartbeat`, stamp);
+        };
+        writeHeartbeat();
+        const heartbeat = setInterval(() => {
+          try {
+            writeHeartbeat();
+          } catch (err) {
+            args.jobLog(`Failed to refresh GPU normalize slot ${slot}/${maxConcurrent}: ${err.message}`);
+          }
+        }, LOCK_HEARTBEAT_MS);
+        if (heartbeat.unref) heartbeat.unref();
+        args.jobLog(`Acquired GPU normalize slot ${slot}/${maxConcurrent}: ${dir}`);
+        return () => {
+          clearInterval(heartbeat);
+          fs.rmSync(dir, { recursive: true, force: true });
+          args.jobLog(`Released GPU normalize slot ${slot}/${maxConcurrent}: ${dir}`);
+        };
+      } catch (err) {
+        if (!err || err.code !== "EEXIST") throw err;
+        const heartbeatPath = `${dir}/heartbeat`;
+        let stat;
+        try {
+          stat = fs.statSync(heartbeatPath);
+        } catch (statErr) {
+          if (statErr && statErr.code === "ENOENT") {
+            try {
+              stat = fs.statSync(`${dir}/holder`);
+            } catch (holderErr) {
+              if (holderErr && holderErr.code === "ENOENT") stat = fs.statSync(dir);
+              else throw holderErr;
+            }
+          } else {
+            throw statErr;
+          }
+        }
+        const ageMs = Date.now() - stat.mtimeMs;
+        if (ageMs > LOCK_STALE_MS) {
+          const holderPid = holderPidForLock(dir);
+          if (holderPid !== null && holderHasActiveNormalizeDescendant(holderPid)) {
+            try {
+              fs.copyFileSync(`${dir}/holder`, heartbeatPath);
+            } catch (refreshErr) {
+              args.jobLog(`Failed to refresh observed active GPU normalize slot ${slot}/${maxConcurrent}: ${refreshErr.message}`);
+            }
+            args.jobLog(`Preserving active GPU normalize slot ${slot}/${maxConcurrent}: ${dir} holder pid ${holderPid}`);
+            continue;
+          }
+          args.jobLog(`Removing stale GPU normalize slot ${slot}/${maxConcurrent}: ${dir} heartbeat age ${Math.round(ageMs / 1000)}s`);
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      }
+    }
+    args.jobLog(`All ${maxConcurrent} GPU normalize slots busy; waiting 10s: ${base}.slotN.lockdir`);
+    await sleep(10000);
+  }
+}
+
 const details = () => ({
   name: "GPU Normalize Audio",
   description: "Normalize all audio streams with FFmpeg loudnorm-compatible planning and GPU-assisted rendering, then mux them back while preserving video, subtitle, attachment, data, chapters, and metadata.",
@@ -287,6 +430,8 @@ const details = () => ({
     { label: "PCM Channels", name: "channels", type: "string", defaultValue: "auto", inputUI: { type: "text" }, tooltip: "Use auto/source to match each audio stream channel count, or set a fixed channel count." },
     { label: "Enable 2-Channel Track", name: "ensureStereo", type: "string", defaultValue: "true", inputUI: { type: "text" }, tooltip: "Default true. If the normalized output would have no 2-channel audio track, add a normalized stereo downmix from the first audio stream. Set false to disable." },
     { label: "Require GPU Worker", name: "requireGpuWorker", type: "string", defaultValue: "true", inputUI: { type: "text" }, tooltip: "Fail fast if Tdarr schedules this plugin on a Transcode CPU worker. Set false only for direct/manual harness tests." },
+    { label: "Max Concurrent Jobs", name: "maxConcurrentJobs", type: "string", defaultValue: "1", inputUI: { type: "text" }, tooltip: "Maximum concurrent GPU normalize jobs for this lock base. Set 0 to disable the guarded slot lock." },
+    { label: "Lock File", name: "lockFile", type: "string", defaultValue: "/tmp/opx_tdarr_gpu_normalize.lock", inputUI: { type: "text" }, tooltip: "Base path for GPU normalize slot lock directories." },
     { label: "Audio Bitrate", name: "audioBitrate", type: "string", defaultValue: "192k", inputUI: { type: "text" }, tooltip: "AAC bitrate for normalized audio streams." },
     { label: "Max PCM MiB", name: "maxPcmMiB", type: "string", defaultValue: "65536", inputUI: { type: "text" }, tooltip: "Abort if a decoded raw audio stream exceeds this size." },
   ],
@@ -434,6 +579,8 @@ const plugin = async (args) => {
   args.jobLog(`GPU normalize Tdarr worker: worker_type=${workerType || "unknown"} require_gpu_worker=${requireGpuWorker ? "true" : "false"}`);
   args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")} ensure_stereo=${ensureStereo ? "true" : "false"}`);
 
+  const releaseConcurrencyLock = await acquireConcurrencyLock(args, args.inputs.lockFile, args.inputs.maxConcurrentJobs);
+  try {
   const cleanupPreviousRes = await runChecked(`${cleanupAll}; rm -f ${q(outputFilePath)}`, { label: "cleanup previous GPU normalize outputs" });
   logProfileStage(args, { scope: "plugin", name: "cleanup_previous", wall_sec: cleanupPreviousRes.wallSec });
   let completedWork = 0;
@@ -479,7 +626,7 @@ const plugin = async (args) => {
       logProfileStage(args, { scope: "plugin", name: "cpu_loudnorm_first_pass", stream: plan.idx, source_stream: plan.sourceIdx, channels: plan.channels, wall_sec: measureWallSec, cached: cachedValues ? 1 : 0 });
       updateProgress(completedWork + measureSpan, true);
       if (maxGain > 0 && gainNeeded > maxGain) {
-        return copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + measureSpan);
+        return await copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + measureSpan);
       }
     }
     const decode = [
@@ -527,7 +674,7 @@ const plugin = async (args) => {
       });
       logProfileStage(args, { scope: "plugin", name: "gpu_source_port", stream: plan.idx, source_stream: plan.sourceIdx, channels: plan.channels, wall_sec: gpuRes.wallSec });
       if (gpuRes.code === 42) {
-        return copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + measureSpan + decodeSpan + normalizeSpan);
+        return await copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + measureSpan + decodeSpan + normalizeSpan);
       }
       if (gpuRes.code !== 0) throw new Error(`GPU normalize failed on ${planLabel}`);
     } else {
@@ -544,7 +691,7 @@ const plugin = async (args) => {
         const gainNeeded = targetI - Number.parseFloat(inputMatch[1]);
         args.jobLog(`GPU normalize gain_needed=${gainNeeded.toFixed(2)} LU max_gain=${maxGain.toFixed(2)} LU`);
         if (gainNeeded > maxGain) {
-          return copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + decodeSpan + normalizeSpan);
+          return await copyOriginalPackage(`GPU normalize gain gate exceeded on ${planLabel}; copying original package`, completedWork + decodeSpan + normalizeSpan);
         }
       }
       const apply = [q(gpuApplyPath), q(plan.rawInput), q(plan.gains), q(plan.rawGpu), "--chunk-mib", q(gpuChunkMiB)].join(" ");
@@ -589,5 +736,8 @@ const plugin = async (args) => {
   logProfileStage(args, { scope: "plugin", name: "whole_plugin", wall_sec: (Date.now() - pluginStartedAt) / 1000 });
   if (typeof args.updateWorker === "function") args.updateWorker({ percentage: 100, ETA: "0:00:00" });
   return { outputFileObj: { _id: outputFilePath }, outputNumber: 1, variables: args.variables };
+  } finally {
+    releaseConcurrencyLock();
+  }
 };
 exports.plugin = plugin;
