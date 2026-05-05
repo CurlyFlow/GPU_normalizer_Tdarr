@@ -6,10 +6,16 @@ It. Can't. Be done. They said.
 
 GPU Normalize Audio is a Tdarr FlowPlugin plus CUDA runtime for FFmpeg `loudnorm`-style audio normalization.
 
-Each release contains the plugin in a versioned directory:
+Each release contains the plugin in a versioned directory. Keep that version directory when installing; it is intentional so multiple versions can coexist and roll back cleanly:
 
 ```text
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/
+```
+
+For example, the current stable release `v1.0` installs as:
+
+```text
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0/
 ```
 
 ## Plugin
@@ -50,9 +56,9 @@ This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port
 
 ## Releases
 
-Download the latest GitHub release asset and extract it into the Tdarr plugins folder. Each release zip includes `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/` plus a `.sha256` checksum file.
+Download the latest GitHub release asset and extract it into the Tdarr plugins folder. Each release zip includes one versioned plugin folder such as `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0/` plus a `.sha256` checksum file. Do not flatten the files into `gpuNormalizeAudio/`; keep each release under its own version folder.
 
-The repository source is versionless; only release assets use versioned Tdarr plugin folders.
+The repository keeps the editable source template under `src/gpuNormalizeAudio/` and keeps published source snapshots under `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/` so GitHub shows every released version folder.
 
 ## Modes
 
@@ -73,16 +79,18 @@ The default mode is `gpuSourcePort`.
 
 ## Performance
 
-Use the newest release unless you need to roll back for your own validation. `1.0.6` makes `gpuSourcePort` the default. `1.0.5` has the same source-port runtime but keeps `sourceExact` as the default. `1.0.2` is useful only if you specifically want the pair-grid stats-kernel improvement without later runtime changes. `1.0.0` is the baseline package and should only be used when you need the original release behavior.
+Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
 
 Version guidance:
 
 | Version | Advice | Performance note |
 | --- | --- | --- |
-| `1.0.0` | Use only for rollback or baseline comparison. | Original public baseline. Raw `gpuSourcePort` validation reached 99%+ similarity, but long-file runtime was much slower than later versions. |
-| `1.0.2` | Use only if newer releases are not suitable for your setup. | Pair-grid stats kernels made the 596s 5.1 raw case about `2.3x` faster than the previous GPU source-port build while keeping the same audio similarity. |
-| `1.0.5` | Use if you want the previous `sourceExact` default. | Same validated source-port runtime line as `1.0.6`, but keeps the older conservative default. |
-| `1.0.6` | Current GPU-source-port default line. | `gpuSourcePort` default. Compare this line against Tdarr's CPU-only `Normalize Audio` plugin for both speed and output audio before production rollout. |
+| `0.0.0` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Original pre-stable baseline; no accepted CPU-normalizer performance matrix. |
+| `0.0.2` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Faster on a 12s smoke, but decoded audio failed CPU `Normalize Audio` parity. |
+| `0.0.5` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Faster on short/60s smokes, but decoded audio failed CPU `Normalize Audio` parity. |
+| `0.0.6` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. `gpuSourcePort` default line was not performance-accepted against CPU `Normalize Audio`. |
+| `0.0.7` | CPU-output matching milestone before stable rename. | Validated for decoded parity against CPU-only `Normalize Audio` on the maintained matrix, but this correctness-first path is slower than CPU on long media. |
+| `1.0` | Current stable CPU-output matching line. | Same correctness target as `0.0.7`, with source/runtime paths resolved relative to the installed plugin folder instead of a hard-coded Tdarr path. Long-media performance remains slower than legacy CPU normalize. |
 
 Performance and audio comparisons should use Tdarr's normal CPU-only Community `Normalize Audio` plugin as the baseline. The expected target is CPU-normalizer output behavior with GPU acceleration, not a separate raw helper path.
 

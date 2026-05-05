@@ -6,7 +6,7 @@ exports.plugin = exports.details = void 0;
 const fs = require("fs");
 const childProcess = require("child_process");
 
-const PLUGIN_VERSION = "__PLUGIN_VERSION__";
+const PLUGIN_VERSION = "1.0";
 const PLUGIN_ROOT = __dirname;
 const RUNTIME_ROOT = `${PLUGIN_ROOT}/runtime`;
 const RUNTIME_BIN = `${RUNTIME_ROOT}/bin`;

@@ -12,9 +12,10 @@ import sys
 import time
 
 
-RUNTIME_BIN = os.path.dirname(os.path.abspath(__file__))
-RUNTIME_ROOT = os.path.dirname(RUNTIME_BIN)
-PLUGIN_ROOT = os.path.dirname(RUNTIME_ROOT)
+FLOW_PLUGINS_ROOT = '/app/server/Tdarr/Plugins/FlowPlugins'
+PLUGIN_ROOT = os.path.join(FLOW_PLUGINS_ROOT, 'CommunityFlowPlugins', 'audio', 'gpuNormalizeAudio', '0.0.6')
+RUNTIME_ROOT = os.path.join(PLUGIN_ROOT, 'runtime')
+RUNTIME_BIN = os.path.join(RUNTIME_ROOT, 'bin')
 RUNTIME_CUDA = os.path.join(RUNTIME_ROOT, 'cuda')
 
 
@@ -443,11 +444,6 @@ def amp_to_db(amp):
     return 20.0 * math.log10(max(float(amp), 1e-12))
 
 
-def frame_size(rate, frame_len_msec):
-    size = round(float(rate) * (float(frame_len_msec) / 1000.0))
-    return int(size) + (int(size) % 2)
-
-
 def gaussian_weights():
     sigma = 3.5
     out = []
@@ -680,7 +676,7 @@ def build_source_port_gains(window_sums, window_peaks, frames_per_window, target
 
 
 def main():
-    parser = argparse.ArgumentParser(description='CUDA loudness/gain planner and renderer for raw PCM')
+    parser = argparse.ArgumentParser(description='CUDA loudness/gain planner and renderer for raw f32le PCM')
     parser.add_argument('input_f32')
     parser.add_argument('output_f32')
     parser.add_argument('--rate', type=int, default=192000)
@@ -693,59 +689,26 @@ def main():
     parser.add_argument('--dynamic-strength', type=float, default=1.0)
     parser.add_argument('--chunk-mib', type=float, default=64.0)
     parser.add_argument('--max-pcm-mib', type=float, default=8192.0)
-    parser.add_argument('--measured-i', type=float)
-    parser.add_argument('--measured-lra', type=float)
-    parser.add_argument('--measured-tp', type=float)
-    parser.add_argument('--measured-thresh', type=float)
-    parser.add_argument('--offset-db', type=float)
-    parser.add_argument('--ffmpeg-linear', action='store_true')
-    parser.add_argument('--disable-short-source-exact', action='store_true')
-    parser.add_argument('--ffmpeg-limiter', action='store_true')
-    parser.add_argument('--ffmpeg-limiter-max-mib', type=float, default=1536.0)
-    parser.add_argument('--ffmpeg-gain-offset-ms', type=float, default=210.0)
-    parser.add_argument('--input-format', choices=('f32le', 'f64le'), default='f32le')
-    parser.add_argument('--output-format', choices=('f32le', 'f64le'), default='f32le')
     parser.add_argument('--ptx-path', default=os.path.join(RUNTIME_CUDA, 'loudnorm_source_port_kernels.ptx'))
     parser.add_argument('--source-core-path', default=os.path.join(RUNTIME_BIN, 'loudnorm-source-cpu'))
     parser.add_argument('--dump-window-gains')
-    parser.add_argument('--dump-window-gains-next')
     args = parser.parse_args()
 
-    if args.input_format == 'f64le' and args.output_format != 'f64le':
-        raise SystemExit('f64le input currently requires f64le output')
-    input_sample_bytes = 8 if args.input_format == 'f64le' else 4
     start_wall = time.perf_counter()
     nbytes = os.path.getsize(args.input_f32)
-    if nbytes <= 0 or nbytes % input_sample_bytes:
-        raise SystemExit(f'input size must be positive multiple of {args.input_format}')
+    if nbytes <= 0 or nbytes % 4:
+        raise SystemExit('input size must be positive multiple of f32')
     mib = nbytes / (1024 * 1024)
     if mib > args.max_pcm_mib:
         raise SystemExit(f'input PCM is {mib:.1f} MiB, above --max-pcm-mib={args.max_pcm_mib:.1f}')
-    total_samples = nbytes // input_sample_bytes
+    total_samples = nbytes // 4
     if total_samples % args.channels:
         raise SystemExit('input sample count must be divisible by channels')
     total_frames = total_samples // args.channels
     frames_per_window = max(1, int((args.rate + 5) // 10))
     windows = (total_frames + frames_per_window - 1) // frames_per_window
     seconds = total_frames / float(args.rate)
-    measured_values = [args.measured_i, args.measured_lra, args.measured_tp, args.measured_thresh]
-    has_measured = all(value is not None and math.isfinite(value) for value in measured_values)
-    runtime_offset_db = args.offset_db if args.offset_db is not None and math.isfinite(args.offset_db) else 0.0
-    linear_mode = False
-    if args.ffmpeg_linear and has_measured:
-        linear_offset = args.target_i - args.measured_i
-        offset_tp = args.measured_tp + linear_offset
-        if (
-            args.measured_tp != 99.0
-            and args.measured_thresh != -70.0
-            and args.measured_lra != 0.0
-            and args.measured_i != 0.0
-            and offset_tp <= args.target_tp
-            and args.measured_lra <= args.target_lra
-        ):
-            linear_mode = True
-            runtime_offset_db = linear_offset
-    if seconds < 30.0 and not args.disable_short_source_exact:
+    if seconds < 30.0:
         emit_tdarr_progress('short_source_exact', 0.01)
         source_core = args.source_core_path
         if not os.path.exists(source_core):
@@ -784,25 +747,13 @@ def main():
         print(f'profile_stage name=short_source_exact_cpu_core wall_sec={elapsed:.6f}', file=sys.stderr)
         emit_tdarr_progress('short_source_exact', 1.0)
         return
-    exact_limiter_requested = args.ffmpeg_limiter and args.input_format == 'f64le' and args.output_format == 'f64le' and has_measured and not linear_mode
-    exact_limiter_max_bytes = int(max(0.0, args.ffmpeg_limiter_max_mib) * 1024 * 1024)
-    exact_limiter_active = exact_limiter_requested
     effective_tp = args.target_tp - max(0.0, args.codec_headroom_db)
     ceiling = db_to_amp(effective_tp)
-    apply_ceiling = 3.4028234663852886e38 if linear_mode else ceiling
-    limiter_lookahead_frames = frame_size(args.rate, 210)
-    limiter_alloc_frames = frame_size(args.rate, 3000)
-    final_flush_frames = max(0, frames_per_window * 30 - frames_per_window)
     chunk_bytes = int(args.chunk_mib * 1024 * 1024)
-    frame_bytes = args.channels * input_sample_bytes
+    frame_bytes = args.channels * 4
     window_bytes = frames_per_window * frame_bytes
     chunk_bytes = max(window_bytes, chunk_bytes - (chunk_bytes % window_bytes))
     chunk_bytes = min(chunk_bytes, nbytes)
-    apply_input_chunk_bytes = chunk_bytes
-    if exact_limiter_active:
-        apply_input_chunk_bytes = chunk_bytes + (max(limiter_lookahead_frames, final_flush_frames) * frame_bytes)
-    output_sample_bytes = 8 if args.output_format == 'f64le' else 4
-    output_chunk_bytes = (chunk_bytes // input_sample_bytes) * output_sample_bytes
     b_coeffs, a_coeffs = ebur128_filter_coeffs(args.rate)
 
     cuda = load_cuda()
@@ -831,35 +782,21 @@ def main():
     try:
         ptx_text = open(args.ptx_path, 'r', encoding='utf-8').read() if os.path.exists(args.ptx_path) else PTX
         module = load_module(cuda, ptx_text)
-        q_fn = ctypes.c_void_p(); sums_fn = ctypes.c_void_p(); exact_sums_fn = ctypes.c_void_p(); gain_fn = ctypes.c_void_p(); metrics_fn = ctypes.c_void_p(); apply_fn = ctypes.c_void_p()
-        q_kernel_name = b'kweight_window_q_f64_kernel' if args.input_format == 'f64le' else b'kweight_window_q_kernel'
-        sums_kernel_name = b'kweight_window_sums_f64_kernel' if args.input_format == 'f64le' else b'kweight_window_sums_kernel'
-        chk(cuda.cuModuleGetFunction(ctypes.byref(q_fn), module, q_kernel_name), f'cuModuleGetFunction({q_kernel_name.decode()})')
-        chk(cuda.cuModuleGetFunction(ctypes.byref(sums_fn), module, sums_kernel_name), f'cuModuleGetFunction({sums_kernel_name.decode()})')
-        if exact_limiter_active:
-            chk(cuda.cuModuleGetFunction(ctypes.byref(exact_sums_fn), module, b'kweight_window_sums_f64_stream_kernel'), 'cuModuleGetFunction(exact-sums)')
+        q_fn = ctypes.c_void_p(); sums_fn = ctypes.c_void_p(); gain_fn = ctypes.c_void_p(); metrics_fn = ctypes.c_void_p(); apply_fn = ctypes.c_void_p()
+        chk(cuda.cuModuleGetFunction(ctypes.byref(q_fn), module, b'kweight_window_q_kernel'), 'cuModuleGetFunction(q-states)')
+        chk(cuda.cuModuleGetFunction(ctypes.byref(sums_fn), module, b'kweight_window_sums_kernel'), 'cuModuleGetFunction(sums)')
         chk(cuda.cuModuleGetFunction(ctypes.byref(gain_fn), module, b'source_port_gain_kernel'), 'cuModuleGetFunction(gain)')
         has_metrics_kernel = cuda.cuModuleGetFunction(ctypes.byref(metrics_fn), module, b'source_port_metrics_kernel') == 0
-        apply_ffmpeg_timing = args.input_format == 'f64le' and has_measured and not linear_mode
-        if exact_limiter_active:
-            apply_kernel_name = b'apply_plan_f64_io_ffmpeg_feedback_limiter_stream_kernel'
-        elif apply_ffmpeg_timing:
-            apply_kernel_name = b'apply_plan_f64_io_ffmpeg_timing_kernel'
-        elif args.input_format == 'f64le':
-            apply_kernel_name = b'apply_plan_f64_io_kernel'
-        else:
-            apply_kernel_name = b'apply_plan_f64_kernel' if args.output_format == 'f64le' else b'apply_plan_kernel'
-        chk(cuda.cuModuleGetFunction(ctypes.byref(apply_fn), module, apply_kernel_name), f'cuModuleGetFunction({apply_kernel_name.decode()})')
+        chk(cuda.cuModuleGetFunction(ctypes.byref(apply_fn), module, b'apply_plan_kernel'), 'cuModuleGetFunction(apply)')
 
-        d_in = ctypes.c_void_p(); d_out = ctypes.c_void_p(); d_apply_in_b = ctypes.c_void_p(); d_apply_out_b = ctypes.c_void_p(); d_sums = ctypes.c_void_p(); d_peaks = ctypes.c_void_p(); d_gains = ctypes.c_void_p(); d_gains_next = ctypes.c_void_p(); d_limiter_buf = ctypes.c_void_p(); d_limiter_prev = ctypes.c_void_p(); d_feedback_state_i = ctypes.c_void_p(); d_feedback_state_d = ctypes.c_void_p(); d_feedback_hist = ctypes.c_void_p(); d_exact_sums_state_i = ctypes.c_void_p(); d_exact_sums_state_d = ctypes.c_void_p(); d_b = ctypes.c_void_p(); d_a = ctypes.c_void_p(); d_q_states = ctypes.c_void_p(); d_start_states = ctypes.c_void_p(); d_hist_energies = ctypes.c_void_p(); d_hist_boundaries = ctypes.c_void_p(); d_metrics = ctypes.c_void_p()
-        chk(cuda.cuMemAlloc_v2(ctypes.byref(d_in), max(chunk_bytes, apply_input_chunk_bytes)), 'cuMemAlloc(input)')
-        chk(cuda.cuMemAlloc_v2(ctypes.byref(d_out), output_chunk_bytes), 'cuMemAlloc(output)')
+        d_in = ctypes.c_void_p(); d_out = ctypes.c_void_p(); d_apply_in_b = ctypes.c_void_p(); d_apply_out_b = ctypes.c_void_p(); d_sums = ctypes.c_void_p(); d_peaks = ctypes.c_void_p(); d_gains = ctypes.c_void_p(); d_b = ctypes.c_void_p(); d_a = ctypes.c_void_p(); d_q_states = ctypes.c_void_p(); d_start_states = ctypes.c_void_p(); d_hist_energies = ctypes.c_void_p(); d_hist_boundaries = ctypes.c_void_p(); d_metrics = ctypes.c_void_p()
+        chk(cuda.cuMemAlloc_v2(ctypes.byref(d_in), chunk_bytes), 'cuMemAlloc(input)')
+        chk(cuda.cuMemAlloc_v2(ctypes.byref(d_out), chunk_bytes), 'cuMemAlloc(output)')
         state_bytes = windows * args.channels * 4 * 8
         for ptr, size, label in [
-            (d_sums, windows * 8, 'sums'),
+            (d_sums, windows * 4, 'sums'),
             (d_peaks, windows * 4, 'peaks'),
             (d_gains, windows * 4, 'gains'),
-            (d_gains_next, windows * 4, 'gains_next'),
             (d_b, 5 * 8, 'filter_b'),
             (d_a, 5 * 8, 'filter_a'),
             (d_q_states, state_bytes, 'q_states'),
@@ -869,27 +806,11 @@ def main():
             (d_metrics, 3 * 4, 'metrics'),
         ]:
             chk(cuda.cuMemAlloc_v2(ctypes.byref(ptr), size), f'cuMemAlloc({label})')
-        if exact_limiter_active:
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_limiter_buf), limiter_alloc_frames * args.channels * 8), 'cuMemAlloc(limiter_buf)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_limiter_prev), args.channels * 8), 'cuMemAlloc(limiter_prev)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_feedback_state_i), 32 * 4), 'cuMemAlloc(feedback_state_i)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_feedback_state_d), 128 * 8), 'cuMemAlloc(feedback_state_d)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_feedback_hist), 1000 * 4), 'cuMemAlloc(feedback_hist)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_exact_sums_state_i), 8 * 4), 'cuMemAlloc(exact_sums_state_i)')
-            chk(cuda.cuMemAlloc_v2(ctypes.byref(d_exact_sums_state_d), (args.channels * 4 + 1) * 8), 'cuMemAlloc(exact_sums_state_d)')
         try:
-            chk(cuda.cuMemsetD32_v2(d_sums, 0, windows * 2), 'cuMemsetD32(sums)')
+            chk(cuda.cuMemsetD32_v2(d_sums, 0, windows), 'cuMemsetD32(sums)')
             chk(cuda.cuMemsetD32_v2(d_peaks, 0, windows), 'cuMemsetD32(peaks)')
             chk(cuda.cuMemsetD32_v2(d_q_states, 0, state_bytes // 4), 'cuMemsetD32(q_states)')
             chk(cuda.cuMemsetD32_v2(d_start_states, 0, state_bytes // 4), 'cuMemsetD32(start_states)')
-            if exact_limiter_active:
-                chk(cuda.cuMemsetD32_v2(d_limiter_buf, 0, limiter_alloc_frames * args.channels * 2), 'cuMemsetD32(limiter_buf)')
-                chk(cuda.cuMemsetD32_v2(d_limiter_prev, 0, args.channels * 2), 'cuMemsetD32(limiter_prev)')
-                chk(cuda.cuMemsetD32_v2(d_feedback_state_i, 0, 32), 'cuMemsetD32(feedback_state_i)')
-                chk(cuda.cuMemsetD32_v2(d_feedback_state_d, 0, 128 * 2), 'cuMemsetD32(feedback_state_d)')
-                chk(cuda.cuMemsetD32_v2(d_feedback_hist, 0, 1000), 'cuMemsetD32(feedback_hist)')
-                chk(cuda.cuMemsetD32_v2(d_exact_sums_state_i, 0, 8), 'cuMemsetD32(exact_sums_state_i)')
-                chk(cuda.cuMemsetD32_v2(d_exact_sums_state_d, 0, (args.channels * 4 + 1) * 2), 'cuMemsetD32(exact_sums_state_d)')
             b_arr = array.array('d', b_coeffs)
             a_arr = array.array('d', a_coeffs)
             hist_energies_values, hist_boundaries_values = histogram_tables()
@@ -905,14 +826,6 @@ def main():
             sums_arg = ctypes.c_uint64(d_sums.value)
             peaks_arg = ctypes.c_uint64(d_peaks.value)
             gains_arg = ctypes.c_uint64(d_gains.value)
-            gains_next_arg = ctypes.c_uint64(d_gains_next.value)
-            limiter_buf_arg = ctypes.c_uint64(d_limiter_buf.value or 0)
-            limiter_prev_arg = ctypes.c_uint64(d_limiter_prev.value or 0)
-            feedback_state_i_arg = ctypes.c_uint64(d_feedback_state_i.value or 0)
-            feedback_state_d_arg = ctypes.c_uint64(d_feedback_state_d.value or 0)
-            feedback_hist_arg = ctypes.c_uint64(d_feedback_hist.value or 0)
-            exact_sums_state_i_arg = ctypes.c_uint64(d_exact_sums_state_i.value or 0)
-            exact_sums_state_d_arg = ctypes.c_uint64(d_exact_sums_state_d.value or 0)
             b_arg = ctypes.c_uint64(d_b.value)
             a_arg = ctypes.c_uint64(d_a.value)
             q_states_arg = ctypes.c_uint64(d_q_states.value)
@@ -926,160 +839,120 @@ def main():
             target_i_arg = ctypes.c_float(args.target_i)
             target_lra_arg = ctypes.c_float(args.target_lra)
             target_tp_arg = ctypes.c_float(args.target_tp)
-            measured_i_arg = ctypes.c_float(args.measured_i if has_measured else 0.0)
-            measured_thresh_arg = ctypes.c_float(args.measured_thresh if has_measured else -70.0)
-            offset_db_arg = ctypes.c_float(runtime_offset_db)
-            linear_mode_arg = ctypes.c_uint32(1 if linear_mode else 0)
-            ceiling_arg = ctypes.c_float(apply_ceiling)
-            exact_limiter_ceiling_arg = ctypes.c_double(apply_ceiling)
-            exact_target_i_arg = ctypes.c_double(args.target_i)
-            exact_target_lra_arg = ctypes.c_double(args.target_lra)
-            exact_measured_i_arg = ctypes.c_double(args.measured_i if has_measured else 0.0)
-            exact_measured_thresh_arg = ctypes.c_double(args.measured_thresh if has_measured else -70.0)
-            exact_offset_amp_arg = ctypes.c_double(db_to_amp(runtime_offset_db))
-            limiter_lookahead_arg = ctypes.c_uint32(limiter_lookahead_frames)
-            total_frames_arg = ctypes.c_uint32(total_frames)
-            gain_timing_offset_arg = ctypes.c_uint32(frame_size(args.rate, args.ffmpeg_gain_offset_ms))
-            attack_length_arg = ctypes.c_uint32(frame_size(args.rate, 10))
-            release_length_arg = ctypes.c_uint32(frame_size(args.rate, 100))
+            ceiling_arg = ctypes.c_float(ceiling)
 
-            host_in = bytearray(max(chunk_bytes, apply_input_chunk_bytes))
-            host_out = bytearray(output_chunk_bytes)
+            host_in = bytearray(chunk_bytes)
+            host_out = bytearray(chunk_bytes)
             host_in_ptr = ctypes.addressof(ctypes.c_char.from_buffer(host_in))
             host_out_ptr = ctypes.addressof(ctypes.c_char.from_buffer(host_out))
             done_bytes = 0
             frame_offset = 0
             chunks = 0
-            if exact_limiter_active:
-                with open(args.input_f32, 'rb') as fh:
-                    while done_bytes < nbytes:
-                        this_bytes = min(chunk_bytes, nbytes - done_bytes)
-                        if this_bytes % frame_bytes:
-                            raise RuntimeError('chunk is not frame-aligned')
-                        got = fh.readinto(memoryview(host_in)[:this_bytes])
-                        if got != this_bytes:
-                            raise RuntimeError('short input read during exact sums')
-                        this_frames = this_bytes // frame_bytes
-                        frames_arg = ctypes.c_uint32(this_frames)
-                        exact_sums_args = (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(sums_arg), ptr_arg(exact_sums_state_i_arg), ptr_arg(exact_sums_state_d_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(b_arg), ptr_arg(a_arg))
-                        stage_t0 = time.perf_counter()
-                        t0 = time.perf_counter()
-                        chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(exact sums input)')
-                        copy_dt = time.perf_counter() - t0
-                        kernel_dt = cuda_event_elapsed(cuda, 'exact-sums', lambda: chk(cuda.cuLaunchKernel(exact_sums_fn, 1, 1, 1, 1, 1, 1, 0, None, exact_sums_args, None), 'cuLaunchKernel(exact-sums)'))
-                        stats_sums_h2d_time += copy_dt
-                        total_h2d_time += copy_dt
-                        stats_sums_kernel_time += kernel_dt
-                        stats_sums_wall_time += time.perf_counter() - stage_t0
-                        done_bytes += this_bytes
-                        frame_offset += this_frames
-                        emit_tdarr_progress('stats_sums', 0.70 * (done_bytes / float(nbytes)))
-            else:
-                with open(args.input_f32, 'rb') as fh:
-                    while done_bytes < nbytes:
-                        this_bytes = min(chunk_bytes, nbytes - done_bytes)
-                        if this_bytes % frame_bytes:
-                            raise RuntimeError('chunk is not frame-aligned')
-                        got = fh.readinto(memoryview(host_in)[:this_bytes])
-                        if got != this_bytes:
-                            raise RuntimeError('short input read during stats')
-                        this_frames = this_bytes // frame_bytes
-                        frames_arg = ctypes.c_uint32(this_frames)
-                        window_offset_arg = ctypes.c_uint32(frame_offset // frames_per_window)
-                        windows_this = (this_frames + frames_per_window - 1) // frames_per_window
-                        pairs_this = windows_this * args.channels
-                        grid_pairs = min(65535, max(1, (pairs_this + 255) // 256))
-                        q_args = (ctypes.c_void_p * 8)(ptr_arg(in_arg), ptr_arg(q_states_arg), ptr_arg(peaks_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(window_offset_arg), ptr_arg(a_arg))
-                        stage_t0 = time.perf_counter()
-                        t0 = time.perf_counter()
-                        chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(stats input)')
-                        copy_dt = time.perf_counter() - t0
-                        kernel_dt = cuda_event_elapsed(cuda, 'q-states', lambda: chk(cuda.cuLaunchKernel(q_fn, grid_pairs, 1, 1, 256, 1, 1, 0, None, q_args, None), 'cuLaunchKernel(q-states)'))
-                        stats_q_h2d_time += copy_dt
-                        total_h2d_time += copy_dt
-                        stats_q_kernel_time += kernel_dt
-                        stats_q_wall_time += time.perf_counter() - stage_t0
-                        done_bytes += this_bytes
-                        frame_offset += this_frames
-                        chunks += 1
-                        emit_tdarr_progress('stats_q', 0.35 * (done_bytes / float(nbytes)))
+            with open(args.input_f32, 'rb') as fh:
+                while done_bytes < nbytes:
+                    this_bytes = min(chunk_bytes, nbytes - done_bytes)
+                    if this_bytes % frame_bytes:
+                        raise RuntimeError('chunk is not frame-aligned')
+                    got = fh.readinto(memoryview(host_in)[:this_bytes])
+                    if got != this_bytes:
+                        raise RuntimeError('short input read during stats')
+                    this_frames = this_bytes // frame_bytes
+                    frames_arg = ctypes.c_uint32(this_frames)
+                    window_offset_arg = ctypes.c_uint32(frame_offset // frames_per_window)
+                    windows_this = (this_frames + frames_per_window - 1) // frames_per_window
+                    pairs_this = windows_this * args.channels
+                    grid_pairs = min(65535, max(1, (pairs_this + 255) // 256))
+                    q_args = (ctypes.c_void_p * 8)(ptr_arg(in_arg), ptr_arg(q_states_arg), ptr_arg(peaks_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(window_offset_arg), ptr_arg(a_arg))
+                    stage_t0 = time.perf_counter()
+                    t0 = time.perf_counter()
+                    chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(stats input)')
+                    copy_dt = time.perf_counter() - t0
+                    kernel_dt = cuda_event_elapsed(cuda, 'q-states', lambda: chk(cuda.cuLaunchKernel(q_fn, grid_pairs, 1, 1, 256, 1, 1, 0, None, q_args, None), 'cuLaunchKernel(q-states)'))
+                    stats_q_h2d_time += copy_dt
+                    total_h2d_time += copy_dt
+                    stats_q_kernel_time += kernel_dt
+                    stats_q_wall_time += time.perf_counter() - stage_t0
+                    done_bytes += this_bytes
+                    frame_offset += this_frames
+                    chunks += 1
+                    emit_tdarr_progress('stats_q', 0.35 * (done_bytes / float(nbytes)))
 
-                t0 = time.perf_counter()
-                q_states = array.array('d', [0.0]) * (windows * args.channels * 4)
-                start_states = array.array('d', [0.0]) * (windows * args.channels * 4)
-                copy_t0 = time.perf_counter()
-                chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(q_states.buffer_info()[0]), d_q_states, state_bytes), 'cuMemcpyDtoH(q_states)')
-                copy_dt = time.perf_counter() - copy_t0
-                host_prefix_d2h_time += copy_dt
-                total_d2h_time += copy_dt
-                cpu_t0 = time.perf_counter()
-                matrix_cache = {}
-                for c in range(args.channels):
-                    state = [0.0, 0.0, 0.0, 0.0]
-                    mapped_unused = args.channels == 6 and c == 3
-                    for w in range(windows):
-                        base = (w * args.channels + c) * 4
-                        start_states[base + 0] = state[0]
-                        start_states[base + 1] = state[1]
-                        start_states[base + 2] = state[2]
-                        start_states[base + 3] = state[3]
-                        if mapped_unused:
-                            continue
-                        length = min(frames_per_window, total_frames - w * frames_per_window)
-                        p = matrix_cache.get(length)
-                        if p is None:
-                            p = ebur128_transition_matrix(length, a_coeffs)
-                            matrix_cache[length] = p
-                        q0 = q_states[base + 0]
-                        q1 = q_states[base + 1]
-                        q2 = q_states[base + 2]
-                        q3 = q_states[base + 3]
-                        state = [
-                            p[0] * state[0] + p[1] * state[1] + p[2] * state[2] + p[3] * state[3] + q0,
-                            p[4] * state[0] + p[5] * state[1] + p[6] * state[2] + p[7] * state[3] + q1,
-                            p[8] * state[0] + p[9] * state[1] + p[10] * state[2] + p[11] * state[3] + q2,
-                            p[12] * state[0] + p[13] * state[1] + p[14] * state[2] + p[15] * state[3] + q3,
-                        ]
-                        state = [0.0 if abs(v) < 2.2250738585072014e-308 else v for v in state]
-                host_prefix_cpu_time += time.perf_counter() - cpu_t0
-                copy_t0 = time.perf_counter()
-                chk(cuda.cuMemcpyHtoD_v2(d_start_states, ctypes.c_void_p(start_states.buffer_info()[0]), state_bytes), 'cuMemcpyHtoD(start_states)')
-                copy_dt = time.perf_counter() - copy_t0
-                host_prefix_h2d_time += copy_dt
-                total_h2d_time += copy_dt
-                host_prefix_wall_time += time.perf_counter() - t0
+            t0 = time.perf_counter()
+            q_states = array.array('d', [0.0]) * (windows * args.channels * 4)
+            start_states = array.array('d', [0.0]) * (windows * args.channels * 4)
+            copy_t0 = time.perf_counter()
+            chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(q_states.buffer_info()[0]), d_q_states, state_bytes), 'cuMemcpyDtoH(q_states)')
+            copy_dt = time.perf_counter() - copy_t0
+            host_prefix_d2h_time += copy_dt
+            total_d2h_time += copy_dt
+            cpu_t0 = time.perf_counter()
+            matrix_cache = {}
+            for c in range(args.channels):
+                state = [0.0, 0.0, 0.0, 0.0]
+                mapped_unused = args.channels == 6 and c == 3
+                for w in range(windows):
+                    base = (w * args.channels + c) * 4
+                    start_states[base + 0] = state[0]
+                    start_states[base + 1] = state[1]
+                    start_states[base + 2] = state[2]
+                    start_states[base + 3] = state[3]
+                    if mapped_unused:
+                        continue
+                    length = min(frames_per_window, total_frames - w * frames_per_window)
+                    p = matrix_cache.get(length)
+                    if p is None:
+                        p = ebur128_transition_matrix(length, a_coeffs)
+                        matrix_cache[length] = p
+                    q0 = q_states[base + 0]
+                    q1 = q_states[base + 1]
+                    q2 = q_states[base + 2]
+                    q3 = q_states[base + 3]
+                    state = [
+                        p[0] * state[0] + p[1] * state[1] + p[2] * state[2] + p[3] * state[3] + q0,
+                        p[4] * state[0] + p[5] * state[1] + p[6] * state[2] + p[7] * state[3] + q1,
+                        p[8] * state[0] + p[9] * state[1] + p[10] * state[2] + p[11] * state[3] + q2,
+                        p[12] * state[0] + p[13] * state[1] + p[14] * state[2] + p[15] * state[3] + q3,
+                    ]
+                    state = [0.0 if abs(v) < 2.2250738585072014e-308 else v for v in state]
+            host_prefix_cpu_time += time.perf_counter() - cpu_t0
+            copy_t0 = time.perf_counter()
+            chk(cuda.cuMemcpyHtoD_v2(d_start_states, ctypes.c_void_p(start_states.buffer_info()[0]), state_bytes), 'cuMemcpyHtoD(start_states)')
+            copy_dt = time.perf_counter() - copy_t0
+            host_prefix_h2d_time += copy_dt
+            total_h2d_time += copy_dt
+            host_prefix_wall_time += time.perf_counter() - t0
 
-                done_bytes = 0
-                frame_offset = 0
-                with open(args.input_f32, 'rb') as fh:
-                    while done_bytes < nbytes:
-                        this_bytes = min(chunk_bytes, nbytes - done_bytes)
-                        if this_bytes % frame_bytes:
-                            raise RuntimeError('chunk is not frame-aligned')
-                        got = fh.readinto(memoryview(host_in)[:this_bytes])
-                        if got != this_bytes:
-                            raise RuntimeError('short input read during sums')
-                        this_frames = this_bytes // frame_bytes
-                        frames_arg = ctypes.c_uint32(this_frames)
-                        window_offset_arg = ctypes.c_uint32(frame_offset // frames_per_window)
-                        windows_this = (this_frames + frames_per_window - 1) // frames_per_window
-                        pairs_this = windows_this * args.channels
-                        grid_pairs = min(65535, max(1, (pairs_this + 255) // 256))
-                        sums_args = (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(sums_arg), ptr_arg(start_states_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(window_offset_arg), ptr_arg(b_arg), ptr_arg(a_arg))
-                        stage_t0 = time.perf_counter()
-                        t0 = time.perf_counter()
-                        chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(sums input)')
-                        copy_dt = time.perf_counter() - t0
-                        kernel_dt = cuda_event_elapsed(cuda, 'sums', lambda: chk(cuda.cuLaunchKernel(sums_fn, grid_pairs, 1, 1, 256, 1, 1, 0, None, sums_args, None), 'cuLaunchKernel(sums)'))
-                        stats_sums_h2d_time += copy_dt
-                        total_h2d_time += copy_dt
-                        stats_sums_kernel_time += kernel_dt
-                        stats_sums_wall_time += time.perf_counter() - stage_t0
-                        done_bytes += this_bytes
-                        frame_offset += this_frames
-                        emit_tdarr_progress('stats_sums', 0.35 + 0.35 * (done_bytes / float(nbytes)))
+            done_bytes = 0
+            frame_offset = 0
+            with open(args.input_f32, 'rb') as fh:
+                while done_bytes < nbytes:
+                    this_bytes = min(chunk_bytes, nbytes - done_bytes)
+                    if this_bytes % frame_bytes:
+                        raise RuntimeError('chunk is not frame-aligned')
+                    got = fh.readinto(memoryview(host_in)[:this_bytes])
+                    if got != this_bytes:
+                        raise RuntimeError('short input read during sums')
+                    this_frames = this_bytes // frame_bytes
+                    frames_arg = ctypes.c_uint32(this_frames)
+                    window_offset_arg = ctypes.c_uint32(frame_offset // frames_per_window)
+                    windows_this = (this_frames + frames_per_window - 1) // frames_per_window
+                    pairs_this = windows_this * args.channels
+                    grid_pairs = min(65535, max(1, (pairs_this + 255) // 256))
+                    sums_args = (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(sums_arg), ptr_arg(start_states_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(window_offset_arg), ptr_arg(b_arg), ptr_arg(a_arg))
+                    stage_t0 = time.perf_counter()
+                    t0 = time.perf_counter()
+                    chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(sums input)')
+                    copy_dt = time.perf_counter() - t0
+                    kernel_dt = cuda_event_elapsed(cuda, 'sums', lambda: chk(cuda.cuLaunchKernel(sums_fn, grid_pairs, 1, 1, 256, 1, 1, 0, None, sums_args, None), 'cuLaunchKernel(sums)'))
+                    stats_sums_h2d_time += copy_dt
+                    total_h2d_time += copy_dt
+                    stats_sums_kernel_time += kernel_dt
+                    stats_sums_wall_time += time.perf_counter() - stage_t0
+                    done_bytes += this_bytes
+                    frame_offset += this_frames
+                    emit_tdarr_progress('stats_sums', 0.35 + 0.35 * (done_bytes / float(nbytes)))
 
-            gain_args = (ctypes.c_void_p * 15)(ptr_arg(sums_arg), ptr_arg(peaks_arg), ptr_arg(gains_arg), ptr_arg(gains_next_arg), ptr_arg(windows_arg), ptr_arg(frame_window_arg), ptr_arg(target_i_arg), ptr_arg(target_lra_arg), ptr_arg(target_tp_arg), ptr_arg(hist_energies_arg), ptr_arg(hist_boundaries_arg), ptr_arg(measured_i_arg), ptr_arg(measured_thresh_arg), ptr_arg(offset_db_arg), ptr_arg(linear_mode_arg))
+            gain_args = (ctypes.c_void_p * 9)(ptr_arg(sums_arg), ptr_arg(peaks_arg), ptr_arg(gains_arg), ptr_arg(windows_arg), ptr_arg(frame_window_arg), ptr_arg(target_i_arg), ptr_arg(target_lra_arg), ptr_arg(target_tp_arg), ptr_arg(hist_energies_arg))
             if has_metrics_kernel:
                 gain_t0 = time.perf_counter()
                 gain_kernel_time = cuda_event_elapsed(cuda, 'source-port-gain', lambda: chk(cuda.cuLaunchKernel(gain_fn, 1, 1, 1, 1, 1, 1, 0, None, gain_args, None), 'cuLaunchKernel(source-port-gain)'))
@@ -1102,8 +975,8 @@ def main():
             else:
                 copied_full_sums = 1
                 copy_t0 = time.perf_counter()
-                window_sums = array.array('d', [0.0]) * windows
-                chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(window_sums.buffer_info()[0]), d_sums, windows * 8), 'cuMemcpyDtoH(sums)')
+                window_sums = array.array('f', [0.0]) * windows
+                chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(window_sums.buffer_info()[0]), d_sums, windows * 4), 'cuMemcpyDtoH(sums)')
                 copy_dt = time.perf_counter() - copy_t0
                 metrics_d2h_time += copy_dt
                 metrics_wall_time += copy_dt
@@ -1126,8 +999,6 @@ def main():
                 gain_min_amp = min(gains) if gains else 1.0
                 gain_max_amp = max(gains) if gains else 1.0
 
-            if has_measured:
-                input_i = args.measured_i
             gain_needed = args.target_i - input_i if math.isfinite(input_i) else float('inf')
             print(f'input_i={input_i:.2f} gain_needed={gain_needed:.2f} max_gain_db={args.max_gain_db:.2f}', file=sys.stderr)
             if args.max_gain_db > 0 and gain_needed > args.max_gain_db:
@@ -1148,18 +1019,6 @@ def main():
                 with open(args.dump_window_gains, 'wb') as gain_fh:
                     gains.tofile(gain_fh)
 
-            if args.dump_window_gains_next:
-                copied_full_gains = 1
-                gains_next = array.array('f', [0.0]) * windows
-                copy_t0 = time.perf_counter()
-                chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(gains_next.buffer_info()[0]), d_gains_next, windows * 4), 'cuMemcpyDtoH(gains_next dump)')
-                copy_dt = time.perf_counter() - copy_t0
-                metrics_d2h_time += copy_dt
-                metrics_wall_time += copy_dt
-                total_d2h_time += copy_dt
-                with open(args.dump_window_gains_next, 'wb') as gain_fh:
-                    gains_next.tofile(gain_fh)
-
             pinned_ptrs = []
             pinned_views = []
             pinned_raws = []
@@ -1171,14 +1030,12 @@ def main():
                 apply_async_fallback = 'disabled_env'
             elif not async_requested:
                 apply_async_fallback = 'not_requested'
-            elif args.output_format != 'f32le':
-                apply_async_fallback = f'output_format_{args.output_format}'
             elif not getattr(cuda, '_has_async_apply_api', False):
                 apply_async_fallback = 'missing_async_api'
             else:
                 try:
                     chk(cuda.cuMemAlloc_v2(ctypes.byref(d_apply_in_b), chunk_bytes), 'cuMemAlloc(apply input b)')
-                    chk(cuda.cuMemAlloc_v2(ctypes.byref(d_apply_out_b), output_chunk_bytes), 'cuMemAlloc(apply output b)')
+                    chk(cuda.cuMemAlloc_v2(ctypes.byref(d_apply_out_b), chunk_bytes), 'cuMemAlloc(apply output b)')
                     for slot in range(2):
                         stream = ctypes.c_void_p()
                         chk(cuda.cuStreamCreate(ctypes.byref(stream), 0), f'cuStreamCreate(apply {slot})')
@@ -1257,8 +1114,7 @@ def main():
                             got = fi.readinto(apply_in_views[slot][:this_bytes])
                             if got != this_bytes:
                                 raise RuntimeError('short input read during apply')
-                            this_samples = this_bytes // input_sample_bytes
-                            this_output_bytes = this_samples * output_sample_bytes
+                            this_samples = this_bytes // 4
                             this_frames = this_bytes // frame_bytes
                             n_arg = ctypes.c_uint32(this_samples)
                             offset_arg = ctypes.c_uint32(frame_offset)
@@ -1308,96 +1164,34 @@ def main():
                 else:
                     done_bytes = 0
                     frame_offset = 0
-                    exact_first_frame_length = frames_per_window * 30
-                    exact_final_flush_frames = max(0, exact_first_frame_length - frames_per_window)
-                    exact_use_final_flush = exact_limiter_active and total_frames > exact_first_frame_length and exact_final_flush_frames > 0 and total_frames > exact_final_flush_frames
-                    exact_prefinal_frames = total_frames - exact_final_flush_frames if exact_use_final_flush else total_frames
-                    feedback_state_i_host = array.array('I', [0]) * 32
                     with open(args.input_f32, 'rb') as fi, open(args.output_f32, 'wb') as fo:
                         while done_bytes < nbytes:
-                            if exact_limiter_active:
-                                remaining_frames = total_frames - frame_offset
-                                max_output_frames = max(1, chunk_bytes // frame_bytes)
-                                if exact_use_final_flush and frame_offset < exact_prefinal_frames:
-                                    this_frames = min(max_output_frames, exact_prefinal_frames - frame_offset)
-                                else:
-                                    this_frames = min(max_output_frames, remaining_frames)
-                                this_bytes = this_frames * frame_bytes
-                                this_samples = this_frames * args.channels
-                                this_output_bytes = this_samples * output_sample_bytes
-                                if exact_use_final_flush and frame_offset >= exact_prefinal_frames:
-                                    input_base_frame = exact_prefinal_frames
-                                    input_frames = min(total_frames - input_base_frame, exact_final_flush_frames)
-                                elif frame_offset == 0:
-                                    input_base_frame = 0
-                                    input_frames = min(total_frames, this_frames + limiter_lookahead_frames)
-                                else:
-                                    input_base_frame = frame_offset + limiter_lookahead_frames - frames_per_window
-                                    input_frames = min(total_frames - input_base_frame, this_frames + limiter_lookahead_frames)
-                                input_bytes = input_frames * frame_bytes
-                                if input_bytes > len(host_in):
-                                    raise RuntimeError(f'exact limiter input staging exceeded: need={input_bytes} capacity={len(host_in)}')
-                                fi.seek(input_base_frame * frame_bytes)
-                                got = fi.readinto(memoryview(host_in)[:input_bytes])
-                                if got != input_bytes:
-                                    raise RuntimeError('short input read during exact limiter apply')
-                                input_base_arg = ctypes.c_uint32(input_base_frame)
-                                input_frames_arg = ctypes.c_uint32(input_frames)
-                                output_frames_arg = ctypes.c_uint32(this_frames)
-                                apply_args = (ctypes.c_void_p * 28)(ptr_arg(in_arg), ptr_arg(out_arg), ptr_arg(sums_arg), ptr_arg(hist_energies_arg), ptr_arg(hist_boundaries_arg), ptr_arg(limiter_buf_arg), ptr_arg(limiter_prev_arg), ptr_arg(feedback_state_i_arg), ptr_arg(feedback_state_d_arg), ptr_arg(feedback_hist_arg), ptr_arg(total_frames_arg), ptr_arg(input_base_arg), ptr_arg(input_frames_arg), ptr_arg(output_frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(windows_arg), ptr_arg(limiter_lookahead_arg), ptr_arg(attack_length_arg), ptr_arg(release_length_arg), ptr_arg(b_arg), ptr_arg(a_arg), ptr_arg(exact_target_i_arg), ptr_arg(exact_target_lra_arg), ptr_arg(exact_measured_i_arg), ptr_arg(exact_measured_thresh_arg), ptr_arg(exact_offset_amp_arg), ptr_arg(exact_limiter_ceiling_arg))
-                                copy_input_bytes = input_bytes
-                                grid_samples = 1
-                                kernel_label = 'apply exact feedback stream'
-                            elif apply_ffmpeg_timing:
-                                this_bytes = min(chunk_bytes, nbytes - done_bytes)
-                                if this_bytes % frame_bytes:
-                                    raise RuntimeError('chunk is not frame-aligned')
-                                got = fi.readinto(memoryview(host_in)[:this_bytes])
-                                if got != this_bytes:
-                                    raise RuntimeError('short input read during apply')
-                                this_samples = this_bytes // input_sample_bytes
-                                this_output_bytes = this_samples * output_sample_bytes
-                                this_frames = this_bytes // frame_bytes
-                                n_arg = ctypes.c_uint32(this_samples)
-                                offset_arg = ctypes.c_uint32(frame_offset)
-                                apply_args = (ctypes.c_void_p * 12)(ptr_arg(in_arg), ptr_arg(out_arg), ptr_arg(gains_arg), ptr_arg(gains_next_arg), ptr_arg(n_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(windows_arg), ptr_arg(offset_arg), ptr_arg(limiter_lookahead_arg), ptr_arg(gain_timing_offset_arg), ptr_arg(ceiling_arg))
-                                copy_input_bytes = this_bytes
-                                grid_samples = min(65535, max(1, (this_samples + 255) // 256))
-                                kernel_label = 'apply'
-                            else:
-                                this_bytes = min(chunk_bytes, nbytes - done_bytes)
-                                if this_bytes % frame_bytes:
-                                    raise RuntimeError('chunk is not frame-aligned')
-                                got = fi.readinto(memoryview(host_in)[:this_bytes])
-                                if got != this_bytes:
-                                    raise RuntimeError('short input read during apply')
-                                this_samples = this_bytes // input_sample_bytes
-                                this_output_bytes = this_samples * output_sample_bytes
-                                this_frames = this_bytes // frame_bytes
-                                n_arg = ctypes.c_uint32(this_samples)
-                                offset_arg = ctypes.c_uint32(frame_offset)
-                                apply_args = (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(out_arg), ptr_arg(gains_arg), ptr_arg(n_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(windows_arg), ptr_arg(offset_arg), ptr_arg(ceiling_arg))
-                                copy_input_bytes = this_bytes
-                                grid_samples = min(65535, max(1, (this_samples + 255) // 256))
-                                kernel_label = 'apply'
+                            this_bytes = min(chunk_bytes, nbytes - done_bytes)
+                            if this_bytes % frame_bytes:
+                                raise RuntimeError('chunk is not frame-aligned')
+                            got = fi.readinto(memoryview(host_in)[:this_bytes])
+                            if got != this_bytes:
+                                raise RuntimeError('short input read during apply')
+                            this_samples = this_bytes // 4
+                            this_frames = this_bytes // frame_bytes
+                            n_arg = ctypes.c_uint32(this_samples)
+                            offset_arg = ctypes.c_uint32(frame_offset)
+                            apply_args = (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(out_arg), ptr_arg(gains_arg), ptr_arg(n_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(windows_arg), ptr_arg(offset_arg), ptr_arg(ceiling_arg))
                             stage_t0 = time.perf_counter()
                             t0 = time.perf_counter()
-                            chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), copy_input_bytes), 'cuMemcpyHtoD(apply input)')
+                            chk(cuda.cuMemcpyHtoD_v2(d_in, ctypes.c_void_p(host_in_ptr), this_bytes), 'cuMemcpyHtoD(apply input)')
                             copy_dt = time.perf_counter() - t0
                             apply_h2d_time += copy_dt
                             total_h2d_time += copy_dt
-                            apply_kernel_time += cuda_event_elapsed(cuda, 'apply', lambda: chk(cuda.cuLaunchKernel(apply_fn, grid_samples, 1, 1, 1 if exact_limiter_active else 256, 1, 1, 0, None, apply_args, None), f'cuLaunchKernel({kernel_label})'))
-                            if exact_limiter_active:
-                                chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(feedback_state_i_host.buffer_info()[0]), d_feedback_state_i, 32 * 4), 'cuMemcpyDtoH(feedback_state_i)')
-                                if feedback_state_i_host[21] != 0:
-                                    raise RuntimeError(f'exact limiter streaming input window missing at frame_offset={frame_offset}')
+                            grid_samples = min(65535, max(1, (this_samples + 255) // 256))
+                            apply_kernel_time += cuda_event_elapsed(cuda, 'apply', lambda: chk(cuda.cuLaunchKernel(apply_fn, grid_samples, 1, 1, 256, 1, 1, 0, None, apply_args, None), 'cuLaunchKernel(apply)'))
                             t0 = time.perf_counter()
-                            chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(host_out_ptr), d_out, this_output_bytes), 'cuMemcpyDtoH(output)')
+                            chk(cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(host_out_ptr), d_out, this_bytes), 'cuMemcpyDtoH(output)')
                             copy_dt = time.perf_counter() - t0
                             apply_d2h_time += copy_dt
                             total_d2h_time += copy_dt
                             apply_wall_time += time.perf_counter() - stage_t0
-                            fo.write(memoryview(host_out)[:this_output_bytes])
+                            fo.write(memoryview(host_out)[:this_bytes])
                             done_bytes += this_bytes
                             frame_offset += this_frames
                             emit_tdarr_progress('apply', 0.75 + 0.25 * (done_bytes / float(nbytes)))
@@ -1409,7 +1203,7 @@ def main():
                     if ptr.value:
                         cuda.cuMemFreeHost(ptr)
         finally:
-            for ptr in [d_metrics, d_hist_boundaries, d_hist_energies, d_start_states, d_q_states, d_a, d_b, d_exact_sums_state_d, d_exact_sums_state_i, d_feedback_hist, d_feedback_state_d, d_feedback_state_i, d_limiter_prev, d_limiter_buf, d_gains_next, d_gains, d_peaks, d_sums, d_apply_out_b, d_apply_in_b, d_out, d_in]:
+            for ptr in [d_metrics, d_hist_boundaries, d_hist_energies, d_start_states, d_q_states, d_a, d_b, d_gains, d_peaks, d_sums, d_apply_out_b, d_apply_in_b, d_out, d_in]:
                 if ptr.value:
                     cuda.cuMemFree_v2(ptr)
         cuda.cuModuleUnload(module)
@@ -1418,11 +1212,9 @@ def main():
 
     elapsed = time.perf_counter() - start_wall
     print(f'gpu={name.value.decode()}', file=sys.stderr)
-    print(f'audio_seconds={seconds:.3f} rate={args.rate} channels={args.channels} windows={windows} pcm_mib={mib:.1f} chunk_mib={chunk_bytes/(1024*1024):.1f} input_format={args.input_format} output_format={args.output_format}', file=sys.stderr)
+    print(f'audio_seconds={seconds:.3f} rate={args.rate} channels={args.channels} windows={windows} pcm_mib={mib:.1f} chunk_mib={chunk_bytes/(1024*1024):.1f}', file=sys.stderr)
     print(f'target_i={args.target_i:.2f} target_lra={args.target_lra:.2f} target_tp={args.target_tp:.2f} effective_tp={effective_tp:.2f} max_gain_db={args.max_gain_db:.2f}', file=sys.stderr)
-    if has_measured:
-        print(f'cpu_loudnorm_first_pass measured_i={args.measured_i:.2f} measured_lra={args.measured_lra:.2f} measured_tp={args.measured_tp:.2f} measured_thresh={args.measured_thresh:.2f} offset_db={runtime_offset_db:.2f} linear_mode={1 if linear_mode else 0}', file=sys.stderr)
-    print(f'planner=cuda_source_port_ebur128_delta gain_mode={"ffmpeg_linear" if linear_mode else "ffmpeg_dynamic" if has_measured else "source_port"} gain_precision=f32 gain_peak_cap=0 hist_boundary_lut=1 gain_db_min={amp_to_db(gain_min_amp):.2f} gain_db_max={amp_to_db(gain_max_amp):.2f}', file=sys.stderr)
+    print(f'planner=cuda_source_port_ebur128_delta gain_db_min={amp_to_db(gain_min_amp):.2f} gain_db_max={amp_to_db(gain_max_amp):.2f}', file=sys.stderr)
     stats_wall_time = stats_q_wall_time + host_prefix_wall_time + stats_sums_wall_time
     print(f'stats_wall_sec={stats_wall_time:.3f} gain_wall_sec={gain_wall_time:.3f} apply_wall_sec={apply_wall_time:.3f} elapsed_sec={elapsed:.3f} realtime_x={seconds/elapsed:.1f}', file=sys.stderr)
     print(f'profile_stage name=stats_q wall_sec={stats_q_wall_time:.6f} h2d_sec={stats_q_h2d_time:.6f} kernel_sec={stats_q_kernel_time:.6f}', file=sys.stderr)
@@ -1431,7 +1223,7 @@ def main():
     print(f'profile_stage name=gain_plan wall_sec={gain_wall_time:.6f} kernel_sec={gain_kernel_time:.6f}', file=sys.stderr)
     print(f'profile_stage name=device_metrics wall_sec={metrics_wall_time:.6f} kernel_sec={metrics_kernel_time:.6f} d2h_sec={metrics_d2h_time:.6f} path={metrics_path} copied_full_sums={copied_full_sums} copied_full_gains={copied_full_gains}', file=sys.stderr)
     print(f'profile_stage name=apply_setup wall_sec={apply_setup_wall_time:.6f} path={apply_path} pinned={apply_pinned} streams={apply_stream_count} fallback={apply_async_fallback}', file=sys.stderr)
-    print(f'profile_stage name=apply wall_sec={apply_wall_time:.6f} h2d_sec={apply_h2d_time:.6f} kernel_sec={apply_kernel_time:.6f} d2h_sec={apply_d2h_time:.6f} path={apply_path} pinned={apply_pinned} streams={apply_stream_count} fallback={apply_async_fallback} input_format={args.input_format} output_format={args.output_format} ffmpeg_timing={1 if apply_ffmpeg_timing else 0} ffmpeg_limiter={1 if exact_limiter_active else 0} ffmpeg_final_flush={1 if exact_limiter_active else 0} ffmpeg_gain_offset_ms={args.ffmpeg_gain_offset_ms:.3f} ffmpeg_gain_offset_frames={gain_timing_offset_arg.value}', file=sys.stderr)
+    print(f'profile_stage name=apply wall_sec={apply_wall_time:.6f} h2d_sec={apply_h2d_time:.6f} kernel_sec={apply_kernel_time:.6f} d2h_sec={apply_d2h_time:.6f} path={apply_path} pinned={apply_pinned} streams={apply_stream_count} fallback={apply_async_fallback}', file=sys.stderr)
     print(f'profile_transfer h2d_sec={total_h2d_time:.6f} d2h_sec={total_d2h_time:.6f}', file=sys.stderr)
 
 
