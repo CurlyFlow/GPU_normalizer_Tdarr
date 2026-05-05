@@ -40,7 +40,7 @@ rc = nvrtc.nvrtcCreateProgram(ctypes.byref(prog), src, name, 0, None, None)
 if rc != 0:
     raise RuntimeError(nvrtc.nvrtcGetErrorString(rc).decode())
 
-opts = [b'--gpu-architecture=compute_61', b'--std=c++11']
+opts = [b'--gpu-architecture=compute_61', b'--std=c++11', b'--fmad=false']
 arr = (ctypes.c_char_p * len(opts))(*opts)
 rc = nvrtc.nvrtcCompileProgram(prog, len(opts), arr)
 log_size = ctypes.c_size_t()
