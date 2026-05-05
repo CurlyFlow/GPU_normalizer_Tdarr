@@ -58,7 +58,7 @@ This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port
 
 Download the latest GitHub release asset and extract it into the Tdarr plugins folder. Each release zip includes one versioned plugin folder such as `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0/` plus a `.sha256` checksum file. Do not flatten the files into `gpuNormalizeAudio/`; keep each release under its own version folder.
 
-The repository keeps the editable source template under `src/gpuNormalizeAudio/` and keeps published source snapshots under `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/` so GitHub shows every released version folder.
+The repository keeps published source snapshots under `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/` so GitHub shows every released version folder.
 
 ## Modes
 

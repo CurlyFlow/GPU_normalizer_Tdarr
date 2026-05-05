@@ -16,6 +16,9 @@ node_modules/
 AGENTS.md
 docs/
 
+# Local editable source template; release snapshots are tracked per version
+src/
+
 # Generated logs and scratch output
 *.log
 *.tmp

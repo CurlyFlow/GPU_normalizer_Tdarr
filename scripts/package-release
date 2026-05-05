@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  scripts/package-release <version> [output-dir]
+
+Builds a local release zip from tracked files in the versioned plugin folder.
+EOF
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    usage >&2
+    exit 2
+fi
+
+version=$1
+out_dir=${2:-work/release-assets/v$version}
+
+case "$version" in
+    ""|*[!A-Za-z0-9._-]*)
+        printf 'ERR: invalid version: %s\n' "$version" >&2
+        exit 2
+        ;;
+esac
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+plugin_base="FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio"
+plugin_dir="$plugin_base/$version"
+asset="GPU_normalize_audio_tdarr-$version.zip"
+package_dir="GPU_normalize_audio_tdarr-$version"
+staging="$(mktemp -d)"
+
+cleanup() {
+    rm -rf "$staging"
+}
+trap cleanup EXIT
+
+cd "$repo_root"
+
+if ! git ls-files --error-unmatch "$plugin_dir/index.js" >/dev/null 2>&1; then
+    printf 'ERR: missing tracked release folder: %s\n' "$plugin_dir" >&2
+    exit 1
+fi
+
+if git grep -n "__PLUGIN_VERSION__" -- "$plugin_dir"; then
+    printf 'ERR: tracked release folder still contains __PLUGIN_VERSION__.\n' >&2
+    exit 1
+fi
+
+mkdir -p "$out_dir"
+out_dir_abs="$(cd "$out_dir" && pwd)"
+
+node --check "$plugin_dir/index.js"
+python3 -m py_compile \
+    "$plugin_dir/runtime/bin/loudnorm-gpu-source-port" \
+    "$plugin_dir/runtime/cuda/compile_cuda_ptx.py"
+
+mkdir -p "$staging/$package_dir"
+git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
+
+node --check "$staging/$package_dir/$plugin_dir/index.js"
+python3 -m py_compile \
+    "$staging/$package_dir/$plugin_dir/runtime/bin/loudnorm-gpu-source-port" \
+    "$staging/$package_dir/$plugin_dir/runtime/cuda/compile_cuda_ptx.py"
+
+(cd "$staging" && python3 -m zipfile --create "$out_dir_abs/$asset" "$package_dir")
+sha256sum "$out_dir_abs/$asset" > "$out_dir_abs/$asset.sha256"
+
+{
+    printf '## TLDR\n\n'
+    printf 'Release package for `v%s`.\n\n' "$version"
+    if [ -f "release-notes/$version.md" ]; then
+        cat "release-notes/$version.md"
+        printf '\n\n'
+    else
+        printf '## Performance\n\n'
+        printf 'No release-specific performance notes are tracked for `v%s`. Do not claim performance acceptance without comparing against Tdarr CPU-only `Normalize Audio`.\n\n' "$version"
+    fi
+    printf 'Install path inside Tdarr, intentionally versioned so releases can coexist:\n\n'
+    printf '```text\n'
+    printf '%s/%s/\n' "$plugin_base" "$version"
+    printf '```\n\n'
+    printf 'Keep this version folder. Do not flatten the files into `gpuNormalizeAudio/`.\n\n'
+    printf 'Package: `%s`\n\n' "$asset"
+    printf 'SHA256:\n\n'
+    printf '```text\n'
+    cat "$out_dir_abs/$asset.sha256"
+    printf '```\n'
+} > "$out_dir_abs/RELEASE_NOTES.md"
+
+cat "$out_dir_abs/$asset.sha256"
+printf 'OK: wrote %s\n' "$out_dir_abs/RELEASE_NOTES.md"
