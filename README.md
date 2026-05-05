@@ -12,10 +12,10 @@ Each release contains the plugin in a versioned directory. Keep that version dir
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/
 ```
 
-For example, the current stable release `v1.0` installs as:
+For example, the current stable release `v1.1` installs as:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1/
 ```
 
 ## Plugin
@@ -79,7 +79,7 @@ The default mode is `gpuSourcePort`.
 
 ## Performance
 
-Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
+Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. `1.1` keeps that correctness target and improves the exact CUDA apply path on short 5.1 benchmarks, but measured GPU runtime remains slower than CPU. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
 
 Version guidance:
 
@@ -90,7 +90,8 @@ Version guidance:
 | `0.0.5` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Faster on short/60s smokes, but decoded audio failed CPU `Normalize Audio` parity. |
 | `0.0.6` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. `gpuSourcePort` default line was not performance-accepted against CPU `Normalize Audio`. |
 | `0.0.7` | CPU-output matching milestone before stable rename. | Validated for decoded parity against CPU-only `Normalize Audio` on the maintained matrix, but this correctness-first path is slower than CPU on long media. |
-| `1.0` | Current stable CPU-output matching line. | Same correctness target as `0.0.7`, with source/runtime paths resolved relative to the installed plugin folder instead of a hard-coded Tdarr path. Long-media performance remains slower than legacy CPU normalize. |
+| `1.0` | Previous stable CPU-output matching line. | Same correctness target as `0.0.7`, with source/runtime paths resolved relative to the installed plugin folder instead of a hard-coded Tdarr path. Long-media performance remains slower than legacy CPU normalize. |
+| `1.1` | Current stable optimized exact GPU line. | Keeps CPU-output matching behavior and improves short 5.1 apply performance versus `1.0`; measured short benchmarks still remain slower than legacy CPU normalize. |
 
 Performance and audio comparisons should use Tdarr's normal CPU-only Community `Normalize Audio` plugin as the baseline. The expected target is CPU-normalizer output behavior with GPU acceleration, not a separate raw helper path.
 
