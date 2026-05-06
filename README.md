@@ -12,10 +12,10 @@ Each release contains the plugin in a versioned directory. Keep that version dir
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/
 ```
 
-For example, the current stable release `v1.1.2` installs as:
+For example, the current stable release `v1.1.3` installs as:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.2/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.3/
 ```
 
 ## Plugin
@@ -52,7 +52,7 @@ Install by keeping runtime files under the same version folder as `index.js`. Th
 
 This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port`, `compile_cuda_ptx.py`, `loudnorm_source_port_kernels.cu`, and `loudnorm_source_port_kernels.ptx`.
 
-`gpuSourcePort` is the default planner/render path. In `1.1.2` it uses streaming two-pass GPU IO: FFmpeg decode streams PCM into `loudnorm-gpu-source-port`, the GPU runtime performs stats/apply work, and f64 output streams directly into FFmpeg AAC encode. This avoids the old giant raw PCM bridge files for normal `gpuSourcePort` jobs. Raw-file paths remain available only as fallback/diagnostic behavior.
+`gpuSourcePort` is the default planner/render path. Since `1.1.2` it uses streaming two-pass GPU IO: FFmpeg decode streams PCM into `loudnorm-gpu-source-port`, the GPU runtime performs stats/apply work, and f64 output streams directly into FFmpeg AAC encode. This avoids the old giant raw PCM bridge files for normal `gpuSourcePort` jobs. Raw-file paths remain available only as fallback/diagnostic behavior.
 
 `gpuSourcePort` uses `loudnorm-source-cpu` only for the short-file exact fallback. `sourceExact` remains available as a compatibility mode and needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` companion binaries in `runtime/bin/`.
 
@@ -64,7 +64,7 @@ The repository keeps published source snapshots under `FlowPlugins/CommunityFlow
 
 ## Modes
 
-- `gpuSourcePort`: default. Uses the CUDA source-port planner and renderer with streaming FFmpeg decode/encode pipes in `1.1.2`.
+- `gpuSourcePort`: default. Uses the CUDA source-port planner and renderer with streaming FFmpeg decode/encode pipes.
 - `sourceExact`: compatibility mode. Uses the source-core loudnorm planner and GPU sample-gain apply path.
 
 The default mode is `gpuSourcePort`.
@@ -82,13 +82,14 @@ The default mode is `gpuSourcePort`.
 
 ## Performance
 
-Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. `1.1` keeps that correctness target and improves the exact CUDA apply path on short 5.1 benchmarks, but measured GPU runtime remains slower than CPU. `1.1.1` keeps the `1.1` audio path and adds guarded, configurable GPU normalize concurrency. `1.1.2` replaces the normal `gpuSourcePort` raw PCM bridge with streaming two-pass GPU IO and fixes long-case decoded parity with channel-sequential f64 stats for limiter-active audio. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
+Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. `1.1` keeps that correctness target and improves the exact CUDA apply path on short 5.1 benchmarks, but measured GPU runtime remains slower than CPU. `1.1.1` keeps the `1.1` audio path and adds guarded, configurable GPU normalize concurrency. `1.1.2` replaces the normal `gpuSourcePort` raw PCM bridge with streaming two-pass GPU IO and fixes long-case decoded parity with channel-sequential f64 stats for limiter-active audio. `1.1.3` keeps decoded parity and improves limiter-active long-case GPU runtime, but remains slower than CPU on long media. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
 
 Version guidance:
 
 | Version | Advice | Performance note |
 | --- | --- | --- |
-| `1.1.2` | Current stable streaming line. | Normal `gpuSourcePort` jobs stream decode/apply/encode instead of writing huge raw PCM bridge files. Required 12s, 60s, and 30min CPU-vs-GPU parity matrix passed; GPU remains slower than CPU on limiter-heavy long media. |
+| `1.1.3` | Current stable sparse-limiter line. | Required 12s, 60s, and 30min CPU-vs-GPU parity matrix passed. 30min GPU time improved versus `1.1.2` (`2488.1s` to `1695.0s`), but GPU remains slower than CPU on limiter-heavy long media. |
+| `1.1.2` | Previous stable streaming line. | Normal `gpuSourcePort` jobs stream decode/apply/encode instead of writing huge raw PCM bridge files. Required 12s, 60s, and 30min CPU-vs-GPU parity matrix passed; GPU remains slower than CPU on limiter-heavy long media. |
 | `1.1.1` | Previous stable guarded concurrency line. | Same audio behavior as `1.1`, with configurable guarded slot locking to limit concurrent GPU normalize jobs. |
 | `1.1` | Previous stable optimized exact GPU line. | Keeps CPU-output matching behavior and improves short 5.1 apply performance versus `1.0`; measured short benchmarks still remain slower than legacy CPU normalize. |
 | `1.0` | Previous stable CPU-output matching line. | Same correctness target as `0.0.7`, with source/runtime paths resolved relative to the installed plugin folder instead of a hard-coded Tdarr path. Long-media performance remains slower than legacy CPU normalize. |
