@@ -24,13 +24,13 @@ Latest release: `v1.1.3`.
 
 `1.1.3` is faster than `1.1.2`, but long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin.
 
-`Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU. `GPU time vs CPU` shows the same result the other way around: how many times longer or shorter the GPU run took.
+`Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-| Case | CPU `Normalize Audio` | GPU `1.1.3` | Speed vs CPU | GPU time vs CPU | Result |
-| --- | ---: | ---: | ---: | ---: | --- |
-| 12s | `4.2s` | `2.3s` | `1.852x` | `0.54x` | GPU faster, parity passed. |
-| 60s | `16.7s` | `55.7s` | `0.300x` | `3.34x` | GPU slower, parity passed. |
-| 30min | `544.0s` | `1695.0s` | `0.321x` | `3.12x` | GPU slower, parity passed. |
+| Case | CPU `Normalize Audio` | GPU `1.1.3` | Speed vs CPU | Result |
+| --- | ---: | ---: | ---: | --- |
+| 12s | `4.2s` | `2.3s` | `1.852x` | GPU `85%` faster than CPU, parity passed. |
+| 60s | `16.7s` | `55.7s` | `0.300x` | GPU `70%` slower than CPU, parity passed. |
+| 30min | `544.0s` | `1695.0s` | `0.321x` | GPU `68%` slower than CPU, parity passed. |
 
 Compared with `1.1.2` on the required 30min case:
 
