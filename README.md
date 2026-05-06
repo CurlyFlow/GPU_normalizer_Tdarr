@@ -1,106 +1,96 @@
 # GPU Normalize Audio for Tdarr
 
-WARNING: WORK IN PROGRES, THERE MIGHT BE RISK OF BUGS. 
+## TLDR
 
-It. Can't. Be done. They said.
+GPU Normalize Audio is a Tdarr FlowPlugin that tries to move FFmpeg `loudnorm`-style audio normalization onto the GPU while matching Tdarr's normal CPU-only `Normalize Audio` output.
 
-GPU Normalize Audio is a Tdarr FlowPlugin plus CUDA runtime for FFmpeg `loudnorm`-style audio normalization.
+What it does today:
 
-Each release contains the plugin in a versioned directory. Keep that version directory when installing; it is intentional so multiple versions can coexist and roll back cleanly:
+- Normalizes every audio stream in a file, not only the first one.
+- Keeps video, subtitles, chapters, metadata, attachments, and data streams.
+- Uses CUDA for the loudness stats/apply path and streams decode/encode through FFmpeg.
+- Avoids huge raw PCM bridge files for normal `gpuSourcePort` jobs.
+- Keeps decoded audio parity as the top priority, even when that costs speed.
 
-```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/
-```
+What we are trying to do:
 
-For example, the current stable release `v1.1.3` installs as:
+- Match CPU `Normalize Audio` output first.
+- Make the GPU path faster over time without cheating parity.
+- Eventually beat CPU on long limiter-heavy media; it is not there yet.
+
+## Performance
+
+Latest release: `v1.1.3`.
+
+`1.1.3` is faster than `1.1.2`, but long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin.
+
+| Case | CPU `Normalize Audio` | GPU `1.1.3` | Result |
+| --- | ---: | ---: | --- |
+| 12s 5.1 | `4.2s` | `2.3s` | GPU faster, parity passed. |
+| 60s | `16.7s` | `55.7s` | GPU slower, parity passed. |
+| 30min 5.1 | `544.0s` | `1695.0s` | GPU slower, parity passed. |
+
+Compared with `1.1.2` on the required 30min case:
+
+| Version | 30min GPU Time | Exact Apply Time |
+| --- | ---: | ---: |
+| `1.1.2` | `2488.1s` | `1992.9s` |
+| `1.1.3` | `1695.0s` | `1168.9s` |
+
+So `1.1.3` is about `32%` less total time than `1.1.2` on the 30min validation case, while still matching CPU decoded output.
+
+## Install
+
+Download the latest GitHub release zip and extract it into your Tdarr plugins folder.
+
+Keep the version folder. Do not flatten it.
+
+Correct layout:
 
 ```text
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.3/
 ```
 
-## Plugin
-
-Tdarr loads the JavaScript entrypoint from the versioned CommunityFlowPlugin path:
+Tdarr loads:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/index.js
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.3/index.js
 ```
 
-The plugin is named `GPU Normalize Audio`. It normalizes all audio streams, not just the primary stream. Video, subtitles, attachments, data, chapters, and metadata are copied through. Audio streams are processed sequentially so raw PCM intermediates are cleaned after each stream. Long-running decode, GPU normalize, encode, and mux steps report Tdarr worker percentage and ETA updates.
+## What To Use
 
-Bundled runtime/source files live under that version's runtime folder:
+Use the newest release unless you need to roll back.
 
-```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/bin/loudnorm-gpu-source-port
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/cuda/compile_cuda_ptx.py
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/cuda/loudnorm_source_port_kernels.cu
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/cuda/loudnorm_source_port_kernels.ptx
-```
+Default mode is `gpuSourcePort`.
 
-## Runtime Layout
+Recommended defaults:
 
-Default runtime files stay under the installed version's plugin folder:
+- `channels=auto`
+- `requireGpuWorker=true`
+- `Max Concurrent Jobs=1`
+- `Enable 2-Channel Track=true`
 
-```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/bin/loudnorm-source-cpu
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/bin/loudnorm-gpu-source-port
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/bin/gpu-apply-sample-gains
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/runtime/cuda/loudnorm_source_port_kernels.ptx
-```
+## Safety
 
-Install by keeping runtime files under the same version folder as `index.js`. The plugin inputs still let you override paths if your Tdarr setup needs a different location.
-
-This repository includes the CUDA source-port runtime: `loudnorm-gpu-source-port`, `compile_cuda_ptx.py`, `loudnorm_source_port_kernels.cu`, and `loudnorm_source_port_kernels.ptx`.
-
-`gpuSourcePort` is the default planner/render path. Since `1.1.2` it uses streaming two-pass GPU IO: FFmpeg decode streams PCM into `loudnorm-gpu-source-port`, the GPU runtime performs stats/apply work, and f64 output streams directly into FFmpeg AAC encode. This avoids the old giant raw PCM bridge files for normal `gpuSourcePort` jobs. Raw-file paths remain available only as fallback/diagnostic behavior.
-
-`gpuSourcePort` uses `loudnorm-source-cpu` only for the short-file exact fallback. `sourceExact` remains available as a compatibility mode and needs compatible `loudnorm-source-cpu` and `gpu-apply-sample-gains` companion binaries in `runtime/bin/`.
-
-## Releases
-
-Download the latest GitHub release asset and extract it into the Tdarr plugins folder. Each release zip includes one versioned plugin folder such as `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.0/` plus a `.sha256` checksum file. Do not flatten the files into `gpuNormalizeAudio/`; keep each release under its own version folder.
-
-The repository keeps published source snapshots under `FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/<version>/` so GitHub shows every released version folder.
-
-## Modes
-
-- `gpuSourcePort`: default. Uses the CUDA source-port planner and renderer with streaming FFmpeg decode/encode pipes.
-- `sourceExact`: compatibility mode. Uses the source-core loudnorm planner and GPU sample-gain apply path.
-
-The default mode is `gpuSourcePort`.
-
-## Safety Behavior
-
-- `channels=auto` matches each source audio stream's channel count.
-- `Enable 2-Channel Track` (`ensureStereo=true`) is enabled by default. If the normalized output would have no 2-channel audio track, the plugin adds a normalized AAC stereo downmix from the first audio stream. Set `ensureStereo=false` to disable this behavior.
-- `requireGpuWorker=true` is enabled by default. If Tdarr schedules the plugin on a `Transcode CPU` worker, the plugin fails fast instead of running GPU work under a CPU-worker slot. Use a Worker Type flow gate or GPU-only worker limits for production flows.
-- `Max Concurrent Jobs` defaults to `1`. The plugin uses guarded slot lock directories with heartbeat/stale cleanup so only the configured number of GPU normalize jobs run for the same `Lock File` base path. Set `Max Concurrent Jobs=0` to disable this guard.
-- Progress and ETA updates are reported directly from decode, GPU normalize, encode, and mux steps.
-- `maxGain` gates excessive gain; when exceeded, the original package is copied instead of normalized.
-- `maxPcmMiB` guards fallback/diagnostic raw PCM paths. Normal `gpuSourcePort` streaming jobs should not create giant raw `.input.f64` or `.output.f64` bridge files.
+- The plugin fails fast on CPU workers by default so GPU jobs do not accidentally run in CPU slots.
+- `Max Concurrent Jobs` limits concurrent GPU normalize jobs with a lock so multiple files do not overload the GPU.
+- `maxGain` can skip normalization when the required gain is too high.
 - If no audio exists, the plugin skips and returns the original file.
+- Rollback is simple because every release lives in its own version folder.
 
-## Performance
+## Versions
 
-Use the newest release unless you need to roll back for your own validation. `1.0` is the first stable line focused on matching Tdarr's CPU-only `Normalize Audio` output. `1.1` keeps that correctness target and improves the exact CUDA apply path on short 5.1 benchmarks, but measured GPU runtime remains slower than CPU. `1.1.1` keeps the `1.1` audio path and adds guarded, configurable GPU normalize concurrency. `1.1.2` replaces the normal `gpuSourcePort` raw PCM bridge with streaming two-pass GPU IO and fixes long-case decoded parity with channel-sequential f64 stats for limiter-active audio. `1.1.3` keeps decoded parity and improves limiter-active long-case GPU runtime, but remains slower than CPU on long media. Older pre-stable folders are kept as `0.0.x` snapshots: `0.0.7` is the correctness milestone before the stable rename, `0.0.6` made `gpuSourcePort` the default, `0.0.5` kept `sourceExact` as the default, `0.0.2` contains the pair-grid stats-kernel improvement, and `0.0.0` is the baseline package.
+| Version | Use |
+| --- | --- |
+| `1.1.3` | Current release. Faster limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
+| `1.1.2` | Streaming two-pass release. Avoids huge raw PCM bridge files and fixed long-case parity. |
+| `1.1.1` | Added guarded GPU normalize concurrency. |
+| `1.1` | Older optimized exact GPU line. |
+| `1.0` | First stable CPU-output matching line. |
+| `0.0.x` | Old pre-stable snapshots. Some are known not to match CPU normalizer output. Use only for rollback/debug. |
 
-Version guidance:
+## Notes
 
-| Version | Advice | Performance note |
-| --- | --- | --- |
-| `1.1.3` | Current stable sparse-limiter line. | Required 12s, 60s, and 30min CPU-vs-GPU parity matrix passed. 30min GPU time improved versus `1.1.2` (`2488.1s` to `1695.0s`), but GPU remains slower than CPU on limiter-heavy long media. |
-| `1.1.2` | Previous stable streaming line. | Normal `gpuSourcePort` jobs stream decode/apply/encode instead of writing huge raw PCM bridge files. Required 12s, 60s, and 30min CPU-vs-GPU parity matrix passed; GPU remains slower than CPU on limiter-heavy long media. |
-| `1.1.1` | Previous stable guarded concurrency line. | Same audio behavior as `1.1`, with configurable guarded slot locking to limit concurrent GPU normalize jobs. |
-| `1.1` | Previous stable optimized exact GPU line. | Keeps CPU-output matching behavior and improves short 5.1 apply performance versus `1.0`; measured short benchmarks still remain slower than legacy CPU normalize. |
-| `1.0` | Previous stable CPU-output matching line. | Same correctness target as `0.0.7`, with source/runtime paths resolved relative to the installed plugin folder instead of a hard-coded Tdarr path. Long-media performance remains slower than legacy CPU normalize. |
-| `0.0.7` | CPU-output matching milestone before stable rename. | Validated for decoded parity against CPU-only `Normalize Audio` on the maintained matrix, but this correctness-first path is slower than CPU on long media. |
-| `0.0.6` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. `gpuSourcePort` default line was not performance-accepted against CPU `Normalize Audio`. |
-| `0.0.5` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Faster on short/60s smokes, but decoded audio failed CPU `Normalize Audio` parity. |
-| `0.0.2` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Faster on a 12s smoke, but decoded audio failed CPU `Normalize Audio` parity. |
-| `0.0.0` | Buggy pre-stable rollback only. | Bug: not same as CPU normalizer. Original pre-stable baseline; no accepted CPU-normalizer performance matrix. |
-
-Performance and audio comparisons should use Tdarr's normal CPU-only Community `Normalize Audio` plugin as the baseline. The expected target is CPU-normalizer output behavior with GPU acceleration, not a separate raw helper path.
-
-Validated plugin behavior includes plugin load/defaults, no-audio skip, max-gain gate, PCM size guard, missing-runtime failure paths, all-audio normalization, and video/subtitle/data/attachment stream preservation.
+This project is still performance work in progress. The quality target is CPU-normalizer decoded output behavior with GPU acceleration, not a separate audio result that only sounds close.
 
 <img width="1587" height="1443" alt="image" src="https://github.com/user-attachments/assets/9fc7119d-2caa-4bcf-b08b-f857e450f931" />
