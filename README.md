@@ -20,26 +20,26 @@ What we are trying to do:
 
 ## Performance
 
-Latest release: `v1.1.3`.
+Latest release: `v1.1.4`.
 
-`1.1.3` is faster than `1.1.2`, but long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin.
+`1.1.4` is faster than `1.1.3`, but long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin.
 
 `Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-| Case | CPU `Normalize Audio` | GPU `1.1.3` | Speed vs CPU | Result |
+| Case | CPU `Normalize Audio` | GPU `1.1.4` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
 | 12s | `4.2s` | `2.3s` | `1.852x` | GPU `85%` faster than CPU, parity passed. |
-| 60s | `16.7s` | `55.7s` | `0.300x` | GPU `70%` slower than CPU, parity passed. |
-| 30min | `544.0s` | `1695.0s` | `0.321x` | GPU `68%` slower than CPU, parity passed. |
+| 60s | `16.7s` | `49.9s` | `0.335x` | GPU `67%` slower than CPU, parity passed. |
+| 30min | `544.0s` | `1507.6s` | `0.361x` | GPU `64%` slower than CPU, parity passed. |
 
-Compared with `1.1.2` on the required 30min case:
+Compared with `1.1.3` on the required 30min case:
 
-| Version | 30min GPU Time | Exact Apply Time |
-| --- | ---: | ---: |
-| `1.1.2` | `2488.1s` | `1992.9s` |
-| `1.1.3` | `1695.0s` | `1168.9s` |
+| Version | 30min GPU Time | Exact Stats Time | Exact Apply Time |
+| --- | ---: | ---: | ---: |
+| `1.1.3` | `1695.0s` | `285.1s` | `1168.9s` |
+| `1.1.4` | `1507.6s` | `114.8s` | `1158.3s` |
 
-So `1.1.3` improved wall time from `2488.1s` to `1695.0s`, and exact apply from `1992.9s` to `1168.9s`, while still matching CPU decoded output.
+So `1.1.4` improved wall time from `1695.0s` to `1507.6s`, mostly by cutting exact stats time from `285.1s` to `114.8s`, while still matching CPU decoded output.
 
 ## Install
 
@@ -50,13 +50,13 @@ Keep the version folder. Do not flatten it.
 Correct layout:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.3/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.4/
 ```
 
 Tdarr loads:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.3/index.js
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.4/index.js
 ```
 
 ## What To Use
@@ -84,7 +84,8 @@ Recommended defaults:
 
 | Version | Use |
 | --- | --- |
-| `1.1.3` | Current release. Faster limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
+| `1.1.4` | Current release. Faster exact stats and limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
+| `1.1.3` | Faster limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
 | `1.1.2` | Streaming two-pass release. Avoids huge raw PCM bridge files and fixed long-case parity. |
 | `1.1.1` | Added guarded GPU normalize concurrency. |
 | `1.1` | Older optimized exact GPU line. |
