@@ -18,7 +18,7 @@ What we are trying to do:
 - Make the GPU path faster over time without cheating parity.
 - Eventually beat CPU on long limiter-heavy media; it is not there yet.
 
-## Performance
+## Performance (i9 9900k @ 5ghz vs. Nvidia 1050 TI)
 
 Latest release: `v1.1.6`.
 
