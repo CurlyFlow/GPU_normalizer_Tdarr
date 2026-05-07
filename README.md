@@ -24,7 +24,7 @@ Latest release: `v1.1.7`.
 
 `1.1.7` speeds up limiter-heavy `gpuSourcePort` jobs with slot-accumulated safe feedback, parallel feedback for eligible unsafe chunks, smaller default GPU chunks, and asymmetric limiter-risk planning. Long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin, but it is faster than `1.1.6`.
 
-`Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
+`Speed vs CPU` uses measured CPU/GPU wall time: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
 | Case | CPU `Normalize Audio` | GPU `1.1.7` | Speed vs CPU | Speed vs CPU Plugin |
 | --- | ---: | ---: | ---: | --- |
@@ -35,14 +35,14 @@ Latest release: `v1.1.7`.
 
 Compared with the previous releases, `1.1.7` reduces measured GPU runtime. The time columns keep the measured wall times. The badge column shows only test-case speed changes versus the previous release, calculated as `previous time / current time - 1`; green is faster, red is slower, and grey is baseline or no published value.
 
-| Version | 60s GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `1.1.7` | `31.2s` | `841.4s` | `114.9s` | `515.2s` | ![30s +23%](https://img.shields.io/badge/30s-%2B23%25-brightgreen)<br>![60s +17%](https://img.shields.io/badge/60s-%2B17%25-brightgreen)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min +15%](https://img.shields.io/badge/30min-%2B15%25-brightgreen) |
-| `1.1.6` | `36.5s` | `964.1s` | `114.8s` | `615.0s` | ![30s +21%](https://img.shields.io/badge/30s-%2B21%25-brightgreen)<br>![60s +37%](https://img.shields.io/badge/60s-%2B37%25-brightgreen)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min +57%](https://img.shields.io/badge/30min-%2B57%25-brightgreen) |
-| `1.1.5` | `50.1s` | `1513.4s` | `114.9s` | `1158.5s` | ![30s no previous](https://img.shields.io/badge/30s-no%20previous-lightgrey)<br>![60s 0.4% slower](https://img.shields.io/badge/60s-0.4%25%20slower-red)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min 0.4% slower](https://img.shields.io/badge/30min-0.4%25%20slower-red) |
-| `1.1.4` | `49.9s` | `1507.6s` | `114.8s` | `1158.3s` | ![30s no data](https://img.shields.io/badge/30s-no%20data-lightgrey)<br>![60s baseline](https://img.shields.io/badge/60s-baseline-lightgrey)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min baseline](https://img.shields.io/badge/30min-baseline-lightgrey) |
+| Version | 60s GPU Time | 10min GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `1.1.7` | `31.2s` | `281.1s` | `841.4s` | `114.9s` | `515.2s` | ![30s +23%](https://img.shields.io/badge/30s-%2B23%25-brightgreen)<br>![60s +17%](https://img.shields.io/badge/60s-%2B17%25-brightgreen)<br>![10min no baseline](https://img.shields.io/badge/10min-no%20baseline-lightgrey)<br>![30min +15%](https://img.shields.io/badge/30min-%2B15%25-brightgreen) |
+| `1.1.6` | `36.5s` | `no data` | `964.1s` | `114.8s` | `615.0s` | ![30s +21%](https://img.shields.io/badge/30s-%2B21%25-brightgreen)<br>![60s +37%](https://img.shields.io/badge/60s-%2B37%25-brightgreen)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min +57%](https://img.shields.io/badge/30min-%2B57%25-brightgreen) |
+| `1.1.5` | `50.1s` | `no data` | `1513.4s` | `114.9s` | `1158.5s` | ![30s no previous](https://img.shields.io/badge/30s-no%20previous-lightgrey)<br>![60s 0.4% slower](https://img.shields.io/badge/60s-0.4%25%20slower-red)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min 0.4% slower](https://img.shields.io/badge/30min-0.4%25%20slower-red) |
+| `1.1.4` | `49.9s` | `no data` | `1507.6s` | `114.8s` | `1158.3s` | ![30s no data](https://img.shields.io/badge/30s-no%20data-lightgrey)<br>![60s baseline](https://img.shields.io/badge/60s-baseline-lightgrey)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min baseline](https://img.shields.io/badge/30min-baseline-lightgrey) |
 
-Against `1.1.6`, `1.1.7` is about `23%` faster on the 30s case, `17%` faster on the 60s case, and `15%` faster on the 30min case. So `1.1.7` should be chosen for current speed and parity. It still matches CPU decoded output on the required matrix, but it is not faster than CPU-only `Normalize Audio` yet.
+Against `1.1.6`, `1.1.7` is about `23%` faster on the 30s case, `17%` faster on the 60s case, and `15%` faster on the 30min case. The 10min case has a `1.1.7` value, but no matching `1.1.6` baseline was found. So `1.1.7` should be chosen for current speed and parity. It still matches CPU decoded output on the required matrix, but it is not faster than CPU-only `Normalize Audio` yet.
 
 ## Install
 
