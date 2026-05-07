@@ -32,16 +32,16 @@ Latest release: `v1.1.7`.
 | 60s | `16.7s` | `31.2s` | `0.536x` | GPU `46%` slower than CPU, parity passed. |
 | 30min | `544.0s` | `841.4s` | `0.646x` | GPU `35%` slower than CPU, parity passed. |
 
-Compared with the previous releases, `1.1.7` reduces the long-case exact apply bottleneck:
+Compared with the previous releases, `1.1.7` reduces the long-case exact apply bottleneck. The time columns keep the measured wall times. The badges show speed change versus the previous release, calculated as `previous time / current time - 1`; green is faster, red is slower, and grey is baseline or effectively unchanged.
 
-| Version | 60s GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time |
-| --- | ---: | ---: | ---: | ---: |
-| `1.1.4` | `49.9s` | `1507.6s` | `114.8s` | `1158.3s` |
-| `1.1.5` | `50.1s` | `1513.4s` | `114.9s` | `1158.5s` |
-| `1.1.6` | `36.5s` | `964.1s` | `114.8s` | `615.0s` |
-| `1.1.7` | `31.2s` | `841.4s` | `114.9s` | `515.2s` |
+| Version | 60s GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `1.1.7` | `31.2s` | `841.4s` | `114.9s` | `515.2s` | ![60s +17%](https://img.shields.io/badge/60s-%2B17%25-brightgreen) ![30min +15%](https://img.shields.io/badge/30min-%2B15%25-brightgreen) ![apply +19%](https://img.shields.io/badge/apply-%2B19%25-brightgreen) |
+| `1.1.6` | `36.5s` | `964.1s` | `114.8s` | `615.0s` | ![60s +37%](https://img.shields.io/badge/60s-%2B37%25-brightgreen) ![30min +57%](https://img.shields.io/badge/30min-%2B57%25-brightgreen) ![apply +88%](https://img.shields.io/badge/apply-%2B88%25-brightgreen) |
+| `1.1.5` | `50.1s` | `1513.4s` | `114.9s` | `1158.5s` | ![60s 0.4% slower](https://img.shields.io/badge/60s-0.4%25%20slower-red) ![30min 0.4% slower](https://img.shields.io/badge/30min-0.4%25%20slower-red) ![apply same](https://img.shields.io/badge/apply-same-lightgrey) |
+| `1.1.4` | `49.9s` | `1507.6s` | `114.8s` | `1158.3s` | ![baseline](https://img.shields.io/badge/baseline-1.1.4-lightgrey) |
 
-So `1.1.7` should be chosen for current speed and parity. It still matches CPU decoded output on the required matrix, but it is not faster than CPU-only `Normalize Audio` yet.
+Against `1.1.6`, `1.1.7` is about `17%` faster on the 60s case, `15%` faster on the 30min case, and `19%` faster in exact apply time. So `1.1.7` should be chosen for current speed and parity. It still matches CPU decoded output on the required matrix, but it is not faster than CPU-only `Normalize Audio` yet.
 
 ## Install
 
