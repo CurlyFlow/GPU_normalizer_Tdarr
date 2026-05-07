@@ -28,10 +28,10 @@ Latest release: `v1.1.9`.
 
 | Case | CPU `Normalize Audio` | GPU `1.1.9` | Speed vs CPU | Speed vs CPU Plugin |
 | --- | ---: | ---: | ---: | --- |
-| 30s | `10.1s` | `13.9s` | `0.724x` | ![GPU 28% slower](https://img.shields.io/badge/GPU-28%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
-| 60s | `16.7s` | `20.0s` | `0.834x` | ![GPU 17% slower](https://img.shields.io/badge/GPU-17%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
-| 10min | `169.8s` | `139.4s` | `1.218x` | ![GPU 22% faster](https://img.shields.io/badge/GPU-22%25%20faster-brightgreen)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
 | 30min | `544.0s` | `403.0s` | `1.350x` | ![GPU 35% faster](https://img.shields.io/badge/GPU-35%25%20faster-brightgreen)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
+| 10min | `169.8s` | `139.4s` | `1.218x` | ![GPU 22% faster](https://img.shields.io/badge/GPU-22%25%20faster-brightgreen)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
+| 60s | `16.7s` | `20.0s` | `0.834x` | ![GPU 17% slower](https://img.shields.io/badge/GPU-17%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
+| 30s | `10.1s` | `13.9s` | `0.724x` | ![GPU 28% slower](https://img.shields.io/badge/GPU-28%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
 
 Compared with the previous releases, `1.1.9` reduces measured GPU runtime. The time columns keep the measured wall times. The badge column shows only test-case speed changes versus the previous release, calculated as `previous time / current time - 1`; green is faster, red is slower, and grey is baseline or no published value.
 
