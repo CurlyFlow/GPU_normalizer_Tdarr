@@ -26,7 +26,7 @@ Latest release: `v1.1.7`.
 
 `Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-| Case | CPU `Normalize Audio` | GPU `1.1.7` | Speed vs CPU | Result |
+| Case | CPU `Normalize Audio` | GPU `1.1.7` | Speed vs CPU | Speed Change vs CPU Plugin |
 | --- | ---: | ---: | ---: | --- |
 | 30s | `10.1s` | `16.6s` | `0.608x` | GPU `39%` slower than CPU, parity passed. |
 | 60s | `16.7s` | `31.2s` | `0.536x` | GPU `46%` slower than CPU, parity passed. |
