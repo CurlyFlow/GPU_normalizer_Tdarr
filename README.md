@@ -20,26 +20,27 @@ What we are trying to do:
 
 ## Performance
 
-Latest release: `v1.1.5`.
+Latest release: `v1.1.6`.
 
-`1.1.5` is a maintainability refactor of the GPU runtime. Performance is effectively unchanged from `1.1.4`, and long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin.
+`1.1.6` speeds up limiter-heavy `gpuSourcePort` jobs by moving most exact safe-feedback work onto a segmented CUDA path. Long limiter-heavy media is still slower than Tdarr's CPU-only `Normalize Audio` plugin, but it is much faster than `1.1.5`.
 
 `Speed vs CPU` uses the release-note value: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-| Case | CPU `Normalize Audio` | GPU `1.1.5` | Speed vs CPU | Result |
+| Case | CPU `Normalize Audio` | GPU `1.1.6` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| 30s | `10.1s` | `24.9s` | `0.406x` | GPU `59%` slower than CPU, parity passed. |
-| 60s | `16.7s` | `50.1s` | `0.334x` | GPU `67%` slower than CPU, parity passed. |
-| 30min | `544.0s` | `1513.4s` | `0.359x` | GPU `64%` slower than CPU, parity passed. |
+| 30s | `10.1s` | `20.5s` | `0.493x` | GPU `51%` slower than CPU, parity passed. |
+| 60s | `16.7s` | `36.5s` | `0.458x` | GPU `54%` slower than CPU, parity passed. |
+| 30min | `544.0s` | `964.1s` | `0.564x` | GPU `44%` slower than CPU, parity passed. |
 
-Compared with `1.1.4`, the runtime refactor stayed within normal run noise:
+Compared with the previous releases, `1.1.6` reduces the long-case exact apply bottleneck:
 
 | Version | 60s GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time |
 | --- | ---: | ---: | ---: | ---: |
 | `1.1.4` | `49.9s` | `1507.6s` | `114.8s` | `1158.3s` |
 | `1.1.5` | `50.1s` | `1513.4s` | `114.9s` | `1158.5s` |
+| `1.1.6` | `36.5s` | `964.1s` | `114.8s` | `615.0s` |
 
-So `1.1.5` should be chosen for maintainability and release packaging cleanup, not for a speed claim. It still matches CPU decoded output on the required matrix.
+So `1.1.6` should be chosen for current speed and parity. It still matches CPU decoded output on the required matrix, but it is not faster than CPU-only `Normalize Audio` yet.
 
 ## Install
 
@@ -50,13 +51,13 @@ Keep the version folder. Do not flatten it.
 Correct layout:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.5/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.6/
 ```
 
 Tdarr loads:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.5/index.js
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.6/index.js
 ```
 
 ## What To Use
@@ -84,7 +85,8 @@ Recommended defaults:
 
 | Version | Use |
 | --- | --- |
-| `1.1.5` | Current release. Modularized GPU runtime, required parity matrix passed. Performance is effectively unchanged from `1.1.4`; still slower than CPU on long limiter-heavy media. |
+| `1.1.6` | Current release. Segmented exact safe feedback speeds up limiter-heavy 5.1 jobs, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
+| `1.1.5` | Modularized GPU runtime, required parity matrix passed. Performance is effectively unchanged from `1.1.4`; still slower than CPU on long limiter-heavy media. |
 | `1.1.4` | Faster exact stats and limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
 | `1.1.3` | Faster limiter-active GPU path, required parity matrix passed. Still slower than CPU on long limiter-heavy media. |
 | `1.1.2` | Streaming two-pass release. Avoids huge raw PCM bridge files and fixed long-case parity. |
