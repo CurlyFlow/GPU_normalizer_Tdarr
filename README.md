@@ -30,7 +30,7 @@ Latest release: `v1.1.7`.
 | --- | ---: | ---: | ---: | --- |
 | 30s | `10.1s` | `16.6s` | `0.608x` | ![GPU 39% slower](https://img.shields.io/badge/GPU-39%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
 | 60s | `16.7s` | `31.2s` | `0.536x` | ![GPU 46% slower](https://img.shields.io/badge/GPU-46%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
-| 10min | `no data` | `no data` | `no data` | ![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey) |
+| 10min | `169.8s` | `281.1s` | `0.604x` | ![GPU 40% slower](https://img.shields.io/badge/GPU-40%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
 | 30min | `544.0s` | `841.4s` | `0.646x` | ![GPU 35% slower](https://img.shields.io/badge/GPU-35%25%20slower-red)<br>![parity passed](https://img.shields.io/badge/parity-passed-brightgreen) |
 
 Compared with the previous releases, `1.1.7` reduces measured GPU runtime. The time columns keep the measured wall times. The badge column shows only test-case speed changes versus the previous release, calculated as `previous time / current time - 1`; green is faster, red is slower, and grey is baseline or no published value.
