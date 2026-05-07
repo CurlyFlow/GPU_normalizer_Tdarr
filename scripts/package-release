@@ -32,6 +32,15 @@ asset="GPU_normalize_audio_tdarr-$version.zip"
 package_dir="GPU_normalize_audio_tdarr-$version"
 staging="$(mktemp -d)"
 
+check_plugin_python() {
+    local root=$1
+    node --check "$root/index.js"
+    python3 -m py_compile \
+        "$root/runtime/bin/loudnorm-gpu-source-port" \
+        "$root/runtime/bin/"*.py \
+        "$root/runtime/cuda/compile_cuda_ptx.py"
+}
+
 cleanup() {
     rm -rf "$staging"
 }
@@ -52,36 +61,12 @@ fi
 mkdir -p "$out_dir"
 out_dir_abs="$(cd "$out_dir" && pwd)"
 
-node --check "$plugin_dir/index.js"
-python3 -m py_compile \
-    "$plugin_dir/runtime/bin/loudnorm-gpu-source-port" \
-    "$plugin_dir/runtime/bin/cuda_buffers.py" \
-    "$plugin_dir/runtime/bin/cuda_driver.py" \
-    "$plugin_dir/runtime/bin/cuda_kernels.py" \
-    "$plugin_dir/runtime/bin/embedded_ptx.py" \
-    "$plugin_dir/runtime/bin/kweight_state.py" \
-    "$plugin_dir/runtime/bin/limiter_risk.py" \
-    "$plugin_dir/runtime/bin/loudnorm_math.py" \
-    "$plugin_dir/runtime/bin/runtime_config.py" \
-    "$plugin_dir/runtime/bin/stream_io.py" \
-    "$plugin_dir/runtime/cuda/compile_cuda_ptx.py"
+check_plugin_python "$plugin_dir"
 
 mkdir -p "$staging/$package_dir"
 git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
 
-node --check "$staging/$package_dir/$plugin_dir/index.js"
-python3 -m py_compile \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/loudnorm-gpu-source-port" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/cuda_buffers.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/cuda_driver.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/cuda_kernels.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/embedded_ptx.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/kweight_state.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/limiter_risk.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/loudnorm_math.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/runtime_config.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/bin/stream_io.py" \
-    "$staging/$package_dir/$plugin_dir/runtime/cuda/compile_cuda_ptx.py"
+check_plugin_python "$staging/$package_dir/$plugin_dir"
 
 (cd "$staging" && python3 -m zipfile --create "$out_dir_abs/$asset" "$package_dir")
 sha256sum "$out_dir_abs/$asset" > "$out_dir_abs/$asset.sha256"
