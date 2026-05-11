@@ -13,15 +13,16 @@ What it does today:
 - Keeps decoded audio parity as the top priority, even when that costs speed.
 - Release smoke testing covers multiple input codec/layout cases, including AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and multi-audio inputs.
 
-## Plugin UI
-
-<img width="1305" height="661" alt="image" src="https://github.com/user-attachments/assets/4ff69be3-772a-4554-beef-93cda9dc7c06" />
-
 What we are trying to do:
 
 - Match CPU `Normalize Audio` output first.
 - Make the GPU path faster over time without cheating parity.
 - Keep improving long-media speed; the current release beats CPU on tested long combined jobs because the original 5.1 normalization is faster, while generated 2-channel fallback work is still slower by itself.
+
+## Plugin UI
+
+<img width="1305" height="661" alt="image" src="https://github.com/user-attachments/assets/4ff69be3-772a-4554-beef-93cda9dc7c06" />
+
 
 ## Performance (i9 9900k @ 5ghz vs. Nvidia 1050 TI)
 
