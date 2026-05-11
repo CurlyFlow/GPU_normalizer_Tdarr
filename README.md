@@ -33,21 +33,21 @@ The table below uses a 5.1 source that has no existing stereo track. The GPU job
 
 | Case | Workload | CPU reference | GPU `1.1.11` | Speed vs CPU | Result |
 | --- | --- | ---: | ---: | ---: | --- |
-| 60min | Original 5.1 | `1072.6s` | `609.3s` | `1.760x` | 5.1 parity passed |
-| 60min | Generated 2ch | `297.2s` | `621.7s` | `0.478x` | 2ch parity passed |
-| 60min | Combined | `1369.8s` | `1237.2s` | `1.107x` | both streams passed |
-| 30min | Original 5.1 | `529.0s` | `310.6s` | `1.703x` | 5.1 parity passed |
-| 30min | Generated 2ch | `149.1s` | `322.2s` | `0.463x` | 2ch parity passed |
-| 30min | Combined | `678.0s` | `634.9s` | `1.068x` | both streams passed |
-| 10min | Original 5.1 | `175.2s` | `105.2s` | `1.665x` | 5.1 parity passed |
-| 10min | Generated 2ch | `48.4s` | `111.2s` | `0.435x` | 2ch parity passed |
-| 10min | Combined | `223.6s` | `217.2s` | `1.030x` | both streams passed |
-| 60s | Original 5.1 | `18.2s` | `13.7s` | `1.326x` | 5.1 parity passed |
-| 60s | Generated 2ch | `4.8s` | `17.0s` | `0.285x` | 2ch parity passed |
-| 60s | Combined | `23.0s` | `30.8s` | `0.746x` | both streams passed |
-| 30s | Original 5.1 | `9.4s` | `8.6s` | `1.092x` | 5.1 parity passed |
-| 30s | Generated 2ch | `2.6s` | `12.4s` | `0.208x` | 2ch parity passed |
-| 30s | Combined | `11.9s` | `21.1s` | `0.567x` | both streams passed |
+| 60min | Original 5.1 | `1072.6s` | `609.3s` | `1.760x` | ![GPU 76% faster](https://img.shields.io/badge/GPU-76%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| 60min | Generated 2ch | `297.2s` | `621.7s` | `0.478x` | ![GPU 109% slower](https://img.shields.io/badge/GPU-109%25%20slower-red)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 60min | Combined | `1369.8s` | `1237.2s` | `1.107x` | ![GPU 11% faster](https://img.shields.io/badge/GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 30min | Original 5.1 | `529.0s` | `310.6s` | `1.703x` | ![GPU 70% faster](https://img.shields.io/badge/GPU-70%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| 30min | Generated 2ch | `149.1s` | `322.2s` | `0.463x` | ![GPU 116% slower](https://img.shields.io/badge/GPU-116%25%20slower-red)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 30min | Combined | `678.0s` | `634.9s` | `1.068x` | ![GPU 7% faster](https://img.shields.io/badge/GPU-7%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 10min | Original 5.1 | `175.2s` | `105.2s` | `1.665x` | ![GPU 67% faster](https://img.shields.io/badge/GPU-67%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| 10min | Generated 2ch | `48.4s` | `111.2s` | `0.435x` | ![GPU 130% slower](https://img.shields.io/badge/GPU-130%25%20slower-red)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 10min | Combined | `223.6s` | `217.2s` | `1.030x` | ![GPU 3% faster](https://img.shields.io/badge/GPU-3%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 60s | Original 5.1 | `18.2s` | `13.7s` | `1.326x` | ![GPU 33% faster](https://img.shields.io/badge/GPU-33%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| 60s | Generated 2ch | `4.8s` | `17.0s` | `0.285x` | ![GPU 251% slower](https://img.shields.io/badge/GPU-251%25%20slower-red)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 60s | Combined | `23.0s` | `30.8s` | `0.746x` | ![GPU 34% slower](https://img.shields.io/badge/GPU-34%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 30s | Original 5.1 | `9.4s` | `8.6s` | `1.092x` | ![GPU 9% faster](https://img.shields.io/badge/GPU-9%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| 30s | Generated 2ch | `2.6s` | `12.4s` | `0.208x` | ![GPU 381% slower](https://img.shields.io/badge/GPU-381%25%20slower-red)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+| 30s | Combined | `11.9s` | `21.1s` | `0.567x` | ![GPU 76% slower](https://img.shields.io/badge/GPU-76%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
 
 Short clips are still slower because fixed startup, decode/encode, and stream setup overhead dominate. Longer media is the intended target and is where the GPU path now catches and passes CPU on the tested 5.1 plus generated-2ch workload.
 
@@ -65,7 +65,7 @@ Compared with previous releases, `1.1.11` changes the default tested contract wh
 
 | Version | 60s GPU Time | 10min GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `1.1.11` | `30.8s` | `217.2s` | `634.9s` | `252.9s` | `162.8s` | ![5.1+2ch contract](https://img.shields.io/badge/contract-5.1%2B2ch-blue)<br>![30min exact parity](https://img.shields.io/badge/30min-parity%20passed-brightgreen)<br>![60min exact parity](https://img.shields.io/badge/60min-parity%20passed-brightgreen) |
+| `1.1.11` | `30.8s` | `217.2s` | `634.9s` | `252.9s` | `162.8s` | ![30min GPU 7% faster](https://img.shields.io/badge/30min%20GPU-7%25%20faster-brightgreen)<br>![60min GPU 11% faster](https://img.shields.io/badge/60min%20GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.1.10` | `15.2s` | `114.9s` | `334.0s` | `108.5s` | `97.9s` | ![30s +48%](https://img.shields.io/badge/30s-%2B48%25-brightgreen)<br>![60s +32%](https://img.shields.io/badge/60s-%2B32%25-brightgreen)<br>![10min +21%](https://img.shields.io/badge/10min-%2B21%25-brightgreen)<br>![30min +21%](https://img.shields.io/badge/30min-%2B21%25-brightgreen) |
 | `1.1.9` | `20.0s` | `139.4s` | `403.0s` | `114.9s` | `112.8s` | ![30s +13%](https://img.shields.io/badge/30s-%2B13%25-brightgreen)<br>![60s +38%](https://img.shields.io/badge/60s-%2B38%25-brightgreen)<br>![10min +68%](https://img.shields.io/badge/10min-%2B68%25-brightgreen)<br>![30min +77%](https://img.shields.io/badge/30min-%2B77%25-brightgreen) |
 | `1.1.8` | `27.5s` | `234.2s` | `712.1s` | `114.9s` | `363.3s` | ![30s +5%](https://img.shields.io/badge/30s-%2B5%25-brightgreen)<br>![60s +13%](https://img.shields.io/badge/60s-%2B13%25-brightgreen)<br>![10min +17%](https://img.shields.io/badge/10min-%2B17%25-brightgreen)<br>![30min +15%](https://img.shields.io/badge/30min-%2B15%25-brightgreen) |
@@ -74,7 +74,7 @@ Compared with previous releases, `1.1.11` changes the default tested contract wh
 | `1.1.5` | `50.1s` | `no data` | `1513.4s` | `114.9s` | `1158.5s` | ![30s no previous](https://img.shields.io/badge/30s-no%20previous-lightgrey)<br>![60s 0.4% slower](https://img.shields.io/badge/60s-0.4%25%20slower-red)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min 0.4% slower](https://img.shields.io/badge/30min-0.4%25%20slower-red) |
 | `1.1.4` | `49.9s` | `no data` | `1507.6s` | `114.8s` | `1158.3s` | ![30s no data](https://img.shields.io/badge/30s-no%20data-lightgrey)<br>![60s baseline](https://img.shields.io/badge/60s-baseline-lightgrey)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min baseline](https://img.shields.io/badge/30min-baseline-lightgrey) |
 
-Choose `1.1.11` for current parity and generated-stereo behavior. Use `1.1.10` only if you need the older release contract without the new generated-stereo scope/order controls.
+Choose `1.1.11` for current parity and generated-stereo behavior. Use `1.1.10` only if you need the older release contract without the new generated-stereo language-priority controls.
 
 ## Install
 
