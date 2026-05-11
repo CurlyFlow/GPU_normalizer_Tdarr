@@ -129,16 +129,6 @@ Defaults:
 - `Max Gain dB=15`
 - `Debug Logging=false`
 
-Internal defaults keep source channel counts (`channels=auto`) and fail fast on CPU workers (`requireGpuWorker=true`). Only `192k` audio bitrate is covered by the release parity/performance matrix.
-
-## Safety
-
-- The plugin fails fast on CPU workers by default so GPU jobs do not accidentally run in CPU slots.
-- `Max Concurrent Jobs` limits concurrent GPU normalize jobs with a lock so multiple files do not overload the GPU.
-- `maxGain` can skip normalization when the required gain is too high.
-- `Debug Logging` is off by default so successful jobs keep logs concise while worker progress still updates.
-- If no audio exists, the plugin skips and returns the original file.
-- Rollback is simple because every release lives in its own version folder.
 
 ## Versions
 
@@ -159,8 +149,6 @@ Internal defaults keep source channel counts (`channels=auto`) and fail fast on 
 | `1.0` | First stable CPU-output matching line. |
 | `0.0.x` | Old pre-stable snapshots. Some are known not to match CPU normalizer output. Use only for rollback/debug. |
 
-## Notes
-
-This project is still performance work in progress. The quality target is CPU-normalizer decoded output behavior with GPU acceleration, not a separate audio result that only sounds close.
+## Plugin UI
 
 <img width="1305" height="661" alt="image" src="https://github.com/user-attachments/assets/4ff69be3-772a-4554-beef-93cda9dc7c06" />
