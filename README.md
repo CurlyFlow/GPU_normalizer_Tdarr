@@ -11,40 +11,55 @@ What it does today:
 - Uses CUDA for the loudness stats/apply path and streams decode/encode through FFmpeg.
 - Avoids huge raw PCM bridge files for normal `gpuSourcePort` jobs.
 - Keeps decoded audio parity as the top priority, even when that costs speed.
+- Release smoke testing covers multiple input codec/layout cases, including AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and multi-audio inputs.
 
 What we are trying to do:
 
 - Match CPU `Normalize Audio` output first.
 - Make the GPU path faster over time without cheating parity.
-- Keep improving long-media speed; the current release beats CPU on tested long 5.1 jobs even when it also creates a normalized 2-channel fallback track.
+- Keep improving long-media speed; the current release beats CPU on tested long combined jobs because the original 5.1 normalization is faster, while generated 2-channel fallback work is still slower by itself.
 
 ## Performance (i9 9900k @ 5ghz vs. Nvidia 1050 TI)
 
 Latest release: `v1.1.11`.
 
-`1.1.11` keeps the streaming `gpuSourcePort` path and adds exact generated-stereo handling for files that need a 2-channel track. By default it normalizes every source audio stream and creates one normalized 2-channel fallback from the first audio stream when no 2-channel track exists. Disable `Only Add 2-Channel For First Audio` to create generated 2-channel fallback tracks for every non-stereo audio stream/language.
+`1.1.11` keeps the streaming `gpuSourcePort` path and adds exact generated-stereo handling for files that need a 2-channel track. By default it normalizes every source audio stream, sorts audio streams by `Track Order` language priority (`eng,en`), and creates one normalized 2-channel fallback from the first matching non-stereo language when no 2-channel track exists. Disable `Only Add 2-Channel For First Language` to create generated 2-channel fallback tracks for every non-stereo audio stream/language.
 
-The table below uses a 5.1 source that has no existing stereo track. The GPU job writes both the normalized original 5.1 stream and the generated normalized 2-channel fallback, then both decoded streams are compared against Tdarr CPU `Normalize Audio` output. CPU time includes the CPU main normalize job plus the CPU normalized stereo fallback job.
+The table below uses a 5.1 source that has no existing stereo track. The GPU job writes both the normalized original 5.1 stream and the generated normalized 2-channel fallback, then both decoded streams are compared against Tdarr CPU `Normalize Audio` output. CPU time is split the same way: the original CPU `Normalize Audio` job for the 5.1 stream, plus a CPU `Normalize Audio` reference for the generated 2-channel source.
 
 `Speed vs CPU` uses measured CPU/GPU wall time: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-| Case | CPU `Normalize Audio` + CPU 2ch fallback | GPU `1.1.11` combined job | Speed vs CPU | Result |
-| --- | ---: | ---: | ---: | --- |
-| 60min | `1369.8s` | `1237.2s` | `1.107x` | ![GPU 11% faster](https://img.shields.io/badge/GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
-| 30min | `678.0s` | `634.9s` | `1.068x` | ![GPU 7% faster](https://img.shields.io/badge/GPU-7%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
-| 10min | `223.6s` | `217.2s` | `1.030x` | ![GPU 3% faster](https://img.shields.io/badge/GPU-3%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
-| 60s | `23.0s` | `30.8s` | `0.746x` | ![GPU 34% slower](https://img.shields.io/badge/GPU-34%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
-| 30s | `11.9s` | `21.1s` | `0.567x` | ![GPU 76% slower](https://img.shields.io/badge/GPU-76%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![2ch parity passed](https://img.shields.io/badge/2ch%20parity-passed-brightgreen) |
+60min TLDR: original 5.1 `1.760x` faster (`1072.6s` CPU vs `609.3s` GPU), generated 2ch `0.478x` slower (`297.2s` CPU vs `621.7s` GPU), combined job `1.107x` faster (`1369.8s` CPU vs `1237.2s` GPU), parity pass for both decoded streams.
+
+| Case | Workload | CPU reference | GPU `1.1.11` | Speed vs CPU | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| 60min | Original 5.1 | `1072.6s` | `609.3s` | `1.760x` | 5.1 parity passed |
+| 60min | Generated 2ch | `297.2s` | `621.7s` | `0.478x` | 2ch parity passed |
+| 60min | Combined | `1369.8s` | `1237.2s` | `1.107x` | both streams passed |
+| 30min | Original 5.1 | `529.0s` | `310.6s` | `1.703x` | 5.1 parity passed |
+| 30min | Generated 2ch | `149.1s` | `322.2s` | `0.463x` | 2ch parity passed |
+| 30min | Combined | `678.0s` | `634.9s` | `1.068x` | both streams passed |
+| 10min | Original 5.1 | `175.2s` | `105.2s` | `1.665x` | 5.1 parity passed |
+| 10min | Generated 2ch | `48.4s` | `111.2s` | `0.435x` | 2ch parity passed |
+| 10min | Combined | `223.6s` | `217.2s` | `1.030x` | both streams passed |
+| 60s | Original 5.1 | `18.2s` | `13.7s` | `1.326x` | 5.1 parity passed |
+| 60s | Generated 2ch | `4.8s` | `17.0s` | `0.285x` | 2ch parity passed |
+| 60s | Combined | `23.0s` | `30.8s` | `0.746x` | both streams passed |
+| 30s | Original 5.1 | `9.4s` | `8.6s` | `1.092x` | 5.1 parity passed |
+| 30s | Generated 2ch | `2.6s` | `12.4s` | `0.208x` | 2ch parity passed |
+| 30s | Combined | `11.9s` | `21.1s` | `0.567x` | both streams passed |
 
 Short clips are still slower because fixed startup, decode/encode, and stream setup overhead dominate. Longer media is the intended target and is where the GPU path now catches and passes CPU on the tested 5.1 plus generated-2ch workload.
+
+Codec smoke coverage for `1.1.11` also passed exact decoded parity for AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and a multi-audio sample. The multi-audio smoke compares each GPU-normalized source stream against Tdarr CPU `Normalize Audio` run on an isolated source for that same stream, matching this plugin's per-stream normalization behavior.
 
 2-channel fallback behavior:
 
 | Setting | Default | Behavior |
 | --- | --- | --- |
 | `Add 2-Channel Track` | `true` | Adds normalized generated stereo track(s) when needed. |
-| `Only Add 2-Channel For First Audio` | `true` | Creates one generated stereo fallback from the first audio stream only. Disable it to create one for every non-stereo audio stream/language. |
-| `2-Channel Track Order` | `end` | `end` keeps generated 2-channel tracks after the original normalized streams. Use `afterSource` to place each generated track after its source, or `first` to put generated tracks first. |
+| `Track Order` | `eng,en` | Comma-separated language priority used before choosing the generated 2-channel source. The default prefers English, while unlisted languages keep source order after listed languages. |
+| `Only Add 2-Channel For First Language` | `true` | Creates one generated stereo fallback from the first non-stereo stream after `Track Order` sorting. Disable it to create one for every non-stereo audio stream/language. |
 
 Compared with previous releases, `1.1.11` changes the default tested contract when `Add 2-Channel Track=true`: the GPU timing above includes the generated 2-channel fallback work, and parity is checked for both the original audio stream and the generated fallback. Older release rows below used the previous primary-stream speed table, so treat the timing comparison as release history rather than a strict same-workload benchmark.
 
@@ -88,8 +103,8 @@ Default mode is `gpuSourcePort`.
 Recommended defaults:
 
 - `Add 2-Channel Track=true`
-- `Only Add 2-Channel For First Audio=true`
-- `2-Channel Track Order=end`
+- `Track Order=eng,en`
+- `Only Add 2-Channel For First Language=true`
 - `Max Concurrent Jobs=1`
 - `Audio Bitrate=192k`
 - `Integrated Loudness I=-18.0`
@@ -113,7 +128,7 @@ Internal defaults keep source channel counts (`channels=auto`) and fail fast on 
 
 | Version | Use |
 | --- | --- |
-| `1.1.11` | Current release. Keeps streaming `gpuSourcePort`, matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on tested long media, and adds controls for first-audio-only versus all-language 2-channel fallback generation and generated-track order. |
+| `1.1.11` | Current release. Keeps streaming `gpuSourcePort`, matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on tested long media, and adds language-priority controls for first-language versus all-language 2-channel fallback generation. |
 | `1.1.10` | Uses smaller streaming chunks, stats decode prefetch, and safe unsafe-output-feedback skipping after threshold lock; required parity matrix passed. Faster than CPU on all tested required limiter-heavy primary-stream cases. |
 | `1.1.9` | Parallelizes safe feedback-skip apply windows while preserving exact state and decoded parity; required parity matrix passed. Faster than CPU on tested 10min/30min limiter-heavy media. |
 | `1.1.8` | Skips safe output-feedback accumulation after the feedback threshold is active while preserving normal limiter/output rendering; required parity matrix passed. Still slower than CPU on long limiter-heavy media. |

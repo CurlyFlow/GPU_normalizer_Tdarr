@@ -83,11 +83,130 @@ function boolInput(value, fallback) {
   return fallback;
 }
 
-function stereoFallbackOrder(value) {
-  const raw = String(value || "end").trim().toLowerCase().replace(/[\s_-]+/g, "");
-  if (["aftersource", "source", "near", "besidesource"].includes(raw)) return "afterSource";
-  if (["first", "stereofirst", "before"].includes(raw)) return "first";
-  return "end";
+const DEFAULT_STEREO_LANGUAGE_ORDER = "eng, en";
+const LEGACY_STEREO_TRACK_ORDER_VALUES = new Set(["end", "aftersource", "source", "near", "besidesource", "first", "stereofirst", "before"]);
+const LANGUAGE_ALIASES = {
+  en: "eng", eng: "eng",
+  de: "deu", deu: "deu", ger: "deu",
+  fr: "fra", fra: "fra", fre: "fra",
+  es: "spa", spa: "spa",
+  it: "ita", ita: "ita",
+  pt: "por", por: "por", pob: "por",
+  ja: "jpn", jpn: "jpn",
+  ko: "kor", kor: "kor",
+  zh: "zho", zho: "zho", chi: "zho", cmn: "zho", yue: "zho",
+  ru: "rus", rus: "rus",
+  uk: "ukr", ukr: "ukr",
+  pl: "pol", pol: "pol",
+  nl: "nld", nld: "nld", dut: "nld",
+  sv: "swe", swe: "swe",
+  da: "dan", dan: "dan",
+  no: "nor", nb: "nor", nn: "nor", nor: "nor",
+  fi: "fin", fin: "fin",
+  tr: "tur", tur: "tur",
+  ar: "ara", ara: "ara",
+  he: "heb", iw: "heb", heb: "heb",
+  hi: "hin", hin: "hin",
+  th: "tha", tha: "tha",
+  vi: "vie", vie: "vie",
+  id: "ind", ind: "ind",
+  ms: "msa", msa: "msa", may: "msa",
+  el: "ell", ell: "ell", gre: "ell",
+  ro: "ron", ron: "ron", rum: "ron",
+  hu: "hun", hun: "hun",
+  cs: "ces", ces: "ces", cze: "ces",
+  sk: "slk", slk: "slk", slo: "slk",
+  bg: "bul", bul: "bul",
+  hr: "hrv", hrv: "hrv",
+  sr: "srp", srp: "srp",
+  sl: "slv", slv: "slv",
+  lt: "lit", lit: "lit",
+  lv: "lav", lav: "lav",
+  et: "est", est: "est",
+  ca: "cat", cat: "cat",
+  eu: "eus", eus: "eus", baq: "eus",
+  gl: "glg", glg: "glg",
+};
+const TRACK_ORDER_COPY_PRESETS = [
+  "English first: eng, en",
+  "German first, then English: deu, ger, de, eng, en",
+  "English first, then German: eng, en, deu, ger, de",
+  "Japanese/anime first: jpn, ja, eng, en, deu, ger, de",
+  "Korean first: kor, ko, eng, en, deu, ger, de",
+  "Chinese first: zho, chi, zh, eng, en, deu, ger, de",
+  "European common: eng, en, deu, ger, de, fra, fre, fr, spa, es, ita, it, por, pt, nld, dut, nl",
+  "Nordic common: eng, en, swe, sv, dan, da, nor, no, fin, fi",
+  "Slavic common: eng, en, rus, ru, ukr, uk, pol, pl, ces, cze, cs, slk, slo, sk",
+].join(" | ");
+const COMMON_LANGUAGE_CODES = [
+  "English: eng, en",
+  "German: deu, ger, de",
+  "French: fra, fre, fr",
+  "Spanish: spa, es",
+  "Italian: ita, it",
+  "Portuguese: por, pt",
+  "Japanese: jpn, ja",
+  "Korean: kor, ko",
+  "Chinese: zho, chi, zh",
+  "Russian: rus, ru",
+  "Ukrainian: ukr, uk",
+  "Polish: pol, pl",
+  "Dutch: nld, dut, nl",
+  "Swedish: swe, sv",
+  "Danish: dan, da",
+  "Norwegian: nor, no",
+  "Finnish: fin, fi",
+  "Turkish: tur, tr",
+  "Arabic: ara, ar",
+  "Hebrew: heb, he",
+  "Hindi: hin, hi",
+  "Thai: tha, th",
+  "Vietnamese: vie, vi",
+  "Indonesian: ind, id",
+  "Malay: msa, may, ms",
+  "Greek: ell, gre, el",
+  "Romanian: ron, rum, ro",
+  "Hungarian: hun, hu",
+  "Czech: ces, cze, cs",
+  "Slovak: slk, slo, sk",
+  "Bulgarian: bul, bg",
+  "Croatian: hrv, hr",
+  "Serbian: srp, sr",
+  "Slovenian: slv, sl",
+  "Lithuanian: lit, lt",
+  "Latvian: lav, lv",
+  "Estonian: est, et",
+  "Catalan: cat, ca",
+  "Basque: eus, baq, eu",
+  "Galician: glg, gl",
+].join("; ");
+const STEREO_LANGUAGE_ORDER_TOOLTIP = `Comma-separated language priority used to sort audio streams before choosing the source for Add 2-Channel Track. Default/copy: ${DEFAULT_STEREO_LANGUAGE_ORDER}. Copy presets: ${TRACK_ORDER_COPY_PRESETS}. Common codes: ${COMMON_LANGUAGE_CODES}.`;
+
+function canonicalLanguage(value) {
+  const raw = String(value || "").trim().toLowerCase().split(/[-_]/)[0].replace(/[^a-z0-9]/g, "");
+  if (!raw || raw === "und" || raw === "unknown") return "";
+  return LANGUAGE_ALIASES[raw] || raw;
+}
+
+function stereoFallbackLanguageOrder(value) {
+  const input = String(value ?? "").trim();
+  const legacyInput = input.toLowerCase().replace(/[\s_-]+/g, "");
+  const raw = !input || LEGACY_STEREO_TRACK_ORDER_VALUES.has(legacyInput) ? DEFAULT_STEREO_LANGUAGE_ORDER : input;
+  const seen = new Set();
+  return raw.split(/[,;|>:=\s]+/).map(canonicalLanguage).filter((language) => {
+    if (!language || seen.has(language)) return false;
+    seen.add(language);
+    return true;
+  });
+}
+
+function sortAudioPlansByLanguage(plans, languageOrder) {
+  if (languageOrder.length === 0) return plans.slice();
+  const languageRank = new Map(languageOrder.map((language, idx) => [language, idx]));
+  return plans.map((plan, idx) => {
+    const language = canonicalLanguage(plan.language);
+    return { plan, idx, rank: languageRank.has(language) ? languageRank.get(language) : Number.MAX_SAFE_INTEGER };
+  }).sort((a, b) => a.rank - b.rank || a.idx - b.idx).map((item) => item.plan);
 }
 
 function envFlag(name, fallback = false) {
@@ -494,9 +613,9 @@ const details = () => ({
   sidebarPosition: -1,
   icon: "faVolumeUp",
   inputs: [
+    { label: "Track Order", name: "stereoFallbackOrder", type: "string", defaultValue: DEFAULT_STEREO_LANGUAGE_ORDER, inputUI: { type: "text" }, tooltip: STEREO_LANGUAGE_ORDER_TOOLTIP },
     { label: "Add 2-Channel Track", name: "ensureStereo", type: "boolean", defaultValue: true, inputUI: { type: "checkbox" }, tooltip: "Default on. Adds normalized generated stereo track(s) according to the 2-channel scope below." },
-    { label: "Only Add 2-Channel For First Audio", name: "stereoFallbackFirstOnly", type: "boolean", defaultValue: true, inputUI: { type: "checkbox" }, tooltip: "Default on. When Add 2-Channel Track is enabled, create one generated stereo track from the first audio stream only. Disable to create generated stereo for every non-stereo audio stream/language." },
-    { label: "2-Channel Track Order", name: "stereoFallbackOrder", type: "string", defaultValue: "end", inputUI: { type: "text" }, tooltip: "Order for generated 2-channel tracks: end (default/current), afterSource, or first." },
+    { label: "Only Add 2-Channel For First Language", name: "stereoFallbackFirstOnly", type: "boolean", defaultValue: true, inputUI: { type: "checkbox" }, tooltip: "Default on. When Add 2-Channel Track is enabled, create one generated stereo track only from the first language selected by Track Order. Disable to create generated stereo for every non-stereo audio stream/language." },
     { label: "Max Concurrent Jobs", name: "maxConcurrentJobs", type: "string", defaultValue: "1", inputUI: { type: "text" }, tooltip: "Maximum concurrent GPU normalize jobs for this lock base. Set 0 to disable the guarded slot lock." },
     { label: "Audio Bitrate", name: "audioBitrate", type: "string", defaultValue: "192k", inputUI: { type: "text" }, tooltip: "AAC bitrate for normalized audio streams. Only 192k is covered by the release parity/performance matrix." },
     { label: "Integrated Loudness I", name: "i", type: "string", defaultValue: "-18.0", inputUI: { type: "text" }, tooltip: "FFmpeg loudnorm I target in LUFS." },
@@ -554,7 +673,7 @@ const plugin = async (args) => {
   const maxGain = num(args.inputs.maxGain, 15);
   const ensureStereo = boolInput(args.inputs.ensureStereo, true);
   const stereoFallbackFirstOnly = boolInput(args.inputs.stereoFallbackFirstOnly, true);
-  const stereoOrder = stereoFallbackOrder(args.inputs.stereoFallbackOrder);
+  const stereoLanguageOrder = stereoFallbackLanguageOrder(args.inputs.stereoFallbackOrder);
   const maxBytes = Math.floor(maxPcmMiB * 1024 * 1024);
   const audioBitrate = String(args.inputs.audioBitrate || "192k").replace(/[^0-9kKmM]/g, "") || "192k";
   const gpuInputFormat = useGpuSourcePort ? "f64le" : "f32le";
@@ -599,6 +718,7 @@ const plugin = async (args) => {
       fifoOutput: `${workDir}/${base}.gpu-normalize.${suffix}.${runId}.stream-out.fifo`,
     };
   });
+  audioPlans.splice(0, audioPlans.length, ...sortAudioPlansByLanguage(audioPlans, stereoLanguageOrder));
   const makeStereoFallbackPlan = (sourceIdx, fallbackOrdinal) => {
     const stream = audioStreams[sourceIdx];
     const suffix = sourceIdx === 0 && fallbackOrdinal === 0 ? "stereo" : `stereo.a${sourceIdx}`;
@@ -632,20 +752,6 @@ const plugin = async (args) => {
       audioPlans.push(makeStereoFallbackPlan(sourcePlan.sourceIdx, fallbackOrdinal));
       fallbackOrdinal += 1;
     }
-  }
-  if (stereoOrder !== "end" && audioPlans.some((plan) => plan.stereoFallback)) {
-    const originals = audioPlans.filter((plan) => !plan.stereoFallback);
-    const fallbacks = audioPlans.filter((plan) => plan.stereoFallback);
-    const orderedPlans = stereoOrder === "first" ? [...fallbacks, ...originals] : [];
-    if (stereoOrder === "afterSource") {
-      for (const plan of originals) {
-        orderedPlans.push(plan, ...fallbacks.filter((fallback) => fallback.sourceIdx === plan.sourceIdx));
-      }
-      for (const fallback of fallbacks) {
-        if (!orderedPlans.includes(fallback)) orderedPlans.push(fallback);
-      }
-    }
-    audioPlans.splice(0, audioPlans.length, ...orderedPlans);
   }
   const durationSeconds = parseDurationSeconds(args.inputFileObj) || 1;
   for (const plan of audioPlans) {
@@ -864,7 +970,7 @@ const plugin = async (args) => {
     ? "Running GPU normalize: FFmpeg decode -> CUDA loudness/gain plan+apply -> FFmpeg encode/mux"
     : "Running GPU normalize: FFmpeg decode -> source-core exact gains -> CUDA apply -> FFmpeg encode/mux");
   args.jobLog(`GPU normalize Tdarr worker: worker_type=${workerType || "unknown"} require_gpu_worker=${requireGpuWorker ? "true" : "false"}`);
-  args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")} ensure_stereo=${ensureStereo ? "true" : "false"} stereo_scope=${ensureStereo ? (stereoFallbackFirstOnly ? "first_audio" : "all_non_stereo_audio") : "off"} stereo_order=${stereoOrder}`);
+  args.jobLog(`GPU normalize audio streams: count=${audioPlans.length} channel_input=${String(args.inputs.channels || "auto")} effective_channels=${audioPlans.map((plan) => plan.channels).join(",")} ensure_stereo=${ensureStereo ? "true" : "false"} stereo_scope=${ensureStereo ? (stereoFallbackFirstOnly ? "first_language" : "all_non_stereo_audio") : "off"} stereo_language_order=${stereoLanguageOrder.join(",") || "source"}`);
   if (processingPlans !== audioPlans) args.jobLog(`GPU normalize processing order: ${processingPlans.map(planLabelFor).join(" -> ")}`);
   if (stereoFallbackSourceExact) args.jobLog("GPU normalize stereo fallback source-exact path enabled");
   for (const plan of audioPlans) {
