@@ -116,13 +116,7 @@ Tdarr loads:
 FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.11/index.js
 ```
 
-## What To Use
-
-Use the newest release unless you need to roll back.
-
-Default mode is `gpuSourcePort`.
-
-Recommended defaults:
+Defaults:
 
 - `Add 2-Channel Track=true`
 - `Track Order=eng,en`
