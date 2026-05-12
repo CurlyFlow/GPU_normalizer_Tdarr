@@ -1,8 +1,6 @@
 # GPU Normalize Audio for Tdarr
 
-*USE AT YOUR OWN RISK* 
-
-*THIS IS WIP*
+*USE AT YOUR OWN RISK* *THIS IS WIP*
 
 ## TLDR
 
