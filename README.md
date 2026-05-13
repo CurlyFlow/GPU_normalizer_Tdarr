@@ -26,59 +26,59 @@ What we are trying to do:
 
 ## Performance (i9 9900k @ 5ghz vs. Nvidia 1050 TI)
 
-Latest release: `v1.1.12`.
+Latest release: `v1.1.13`.
 
-`1.1.12` keeps the streaming `gpuSourcePort` path and speeds up long generated-stereo fallback jobs while preserving exact decoded parity against Tdarr CPU `Normalize Audio`. By default it normalizes every source audio stream, sorts audio streams by `Track Order` language priority (`eng,en`), and creates one normalized 2-channel fallback from the first matching non-stereo language when no 2-channel track exists. Disable `Only Add 2-Channel For First Language` to create generated 2-channel fallback tracks for every non-stereo audio stream/language.
+`1.1.13` keeps the streaming `gpuSourcePort` path and speeds up long generated-stereo fallback jobs while preserving exact decoded parity against Tdarr CPU `Normalize Audio`. By default it normalizes every source audio stream, sorts audio streams by `Track Order` language priority (`eng,en`), and creates one normalized 2-channel fallback from the first matching non-stereo language when no 2-channel track exists. Disable `Only Add 2-Channel For First Language` to create generated 2-channel fallback tracks for every non-stereo audio stream/language.
 
 The table below uses a 5.1 source that has no existing stereo track. The GPU job writes both the normalized original 5.1 stream and the generated normalized 2-channel fallback, then both decoded streams are compared against Tdarr CPU `Normalize Audio` output. `SRC_CPU` time is split the same way: the original CPU `Normalize Audio` job for the 5.1 stream, plus a CPU `Normalize Audio` reference for the generated 2-channel source.
 
 `Speed vs CPU` uses measured SRC_CPU/GPU wall time: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-60min TLDR: original 5.1 `1.747x` faster (`1027.3s` CPU vs `588.1s` GPU), generated 2ch `0.574x` slower (`291.2s` CPU vs `507.3s` GPU), combined job `1.199x` faster (`1318.5s` CPU vs `1099.6s` GPU), parity pass for both decoded streams.
+60min TLDR: original 5.1 `2.254x` faster (`1027.3s` CPU vs `455.8s` GPU), generated 2ch `0.673x` slower (`291.2s` CPU vs `432.5s` GPU), combined job `1.476x` faster (`1318.5s` CPU vs `893.1s` GPU), parity pass for both decoded streams.
 
 ### 60min
 
-| Workload | CPU reference | GPU `1.1.12` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.1.13` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `1027.3s` | `588.1s` | `1.747x` | ![GPU 75% faster](https://img.shields.io/badge/GPU-75%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `291.2s` | `507.3s` | `0.574x` | ![GPU 74% slower](https://img.shields.io/badge/GPU-74%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `1318.5s` | `1099.6s` | `1.199x` | ![GPU 20% faster](https://img.shields.io/badge/GPU-20%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `1027.3s` | `455.8s` | `2.254x` | ![GPU 125% faster](https://img.shields.io/badge/GPU-125%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `291.2s` | `432.5s` | `0.673x` | ![GPU 49% slower](https://img.shields.io/badge/GPU-49%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `1318.5s` | `893.1s` | `1.476x` | ![GPU 48% faster](https://img.shields.io/badge/GPU-48%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 30min
 
-| Workload | CPU reference | GPU `1.1.12` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.1.13` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `540.3s` | `302.4s` | `1.786x` | ![GPU 79% faster](https://img.shields.io/badge/GPU-79%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `155.5s` | `263.8s` | `0.590x` | ![GPU 70% slower](https://img.shields.io/badge/GPU-70%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `695.8s` | `568.4s` | `1.224x` | ![GPU 22% faster](https://img.shields.io/badge/GPU-22%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `540.3s` | `234.9s` | `2.300x` | ![GPU 130% faster](https://img.shields.io/badge/GPU-130%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `155.5s` | `219.8s` | `0.708x` | ![GPU 41% slower](https://img.shields.io/badge/GPU-41%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `695.8s` | `456.8s` | `1.523x` | ![GPU 52% faster](https://img.shields.io/badge/GPU-52%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 10min
 
-| Workload | CPU reference | GPU `1.1.12` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.1.13` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `168.6s` | `102.7s` | `1.641x` | ![GPU 64% faster](https://img.shields.io/badge/GPU-64%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `49.9s` | `93.0s` | `0.537x` | ![GPU 86% slower](https://img.shields.io/badge/GPU-86%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `218.5s` | `196.5s` | `1.112x` | ![GPU 11% faster](https://img.shields.io/badge/GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `168.6s` | `78.5s` | `2.147x` | ![GPU 115% faster](https://img.shields.io/badge/GPU-115%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `49.9s` | `76.1s` | `0.656x` | ![GPU 52% slower](https://img.shields.io/badge/GPU-52%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `218.5s` | `155.3s` | `1.407x` | ![GPU 41% faster](https://img.shields.io/badge/GPU-41%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 60s
 
-| Workload | CPU reference | GPU `1.1.12` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.1.13` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `18.3s` | `13.9s` | `1.316x` | ![GPU 32% faster](https://img.shields.io/badge/GPU-32%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `5.0s` | `14.9s` | `0.335x` | ![GPU 199% slower](https://img.shields.io/badge/GPU-199%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `23.3s` | `29.0s` | `0.805x` | ![GPU 24% slower](https://img.shields.io/badge/GPU-24%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `18.3s` | `9.9s` | `1.851x` | ![GPU 85% faster](https://img.shields.io/badge/GPU-85%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `5.0s` | `11.4s` | `0.437x` | ![GPU 129% slower](https://img.shields.io/badge/GPU-129%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `23.3s` | `21.5s` | `1.086x` | ![GPU 9% faster](https://img.shields.io/badge/GPU-9%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 30s
 
-| Workload | CPU reference | GPU `1.1.12` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.1.13` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `9.8s` | `8.6s` | `1.144x` | ![GPU 14% faster](https://img.shields.io/badge/GPU-14%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `2.6s` | `11.6s` | `0.224x` | ![GPU 347% slower](https://img.shields.io/badge/GPU-347%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `12.4s` | `20.3s` | `0.611x` | ![GPU 64% slower](https://img.shields.io/badge/GPU-64%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `9.8s` | `6.5s` | `1.512x` | ![GPU 51% faster](https://img.shields.io/badge/GPU-51%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `2.6s` | `6.7s` | `0.386x` | ![GPU 159% slower](https://img.shields.io/badge/GPU-159%25%20slower-red)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `12.4s` | `13.4s` | `0.930x` | ![GPU 8% slower](https://img.shields.io/badge/GPU-8%25%20slower-red)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 Short clips are still slower because fixed startup, decode/encode, and stream setup overhead dominate. Longer media is the intended target and is where the GPU path now catches and passes CPU on the tested 5.1 plus generated-2ch workload.
 
-Codec smoke coverage for `1.1.12` also passed exact decoded parity for AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and a multi-audio sample. The multi-audio smoke compares each GPU-normalized source stream against Tdarr CPU `Normalize Audio` run on an isolated source for that same stream, matching this plugin's per-stream normalization behavior.
+Codec smoke coverage for `1.1.13` also passed exact decoded parity for AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and a multi-audio sample. The multi-audio smoke compares each GPU-normalized source stream against Tdarr CPU `Normalize Audio` run on an isolated source for that same stream, matching this plugin's per-stream normalization behavior.
 
 2-channel fallback behavior:
 
@@ -92,6 +92,7 @@ Compared with releases before `1.1.11`, the default tested contract when `Add 2-
 
 | Version | 60s GPU Time | 10min GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `1.1.13` | `21.5s` | `155.3s` | `456.8s` | `262.2s` | `138.7s` | ![10min GPU 27% faster](https://img.shields.io/badge/10min%20GPU-27%25%20faster-brightgreen)<br>![30min GPU 24% faster](https://img.shields.io/badge/30min%20GPU-24%25%20faster-brightgreen)<br>![60min GPU 23% faster](https://img.shields.io/badge/60min%20GPU-23%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.1.12` | `29.0s` | `196.5s` | `568.4s` | `222.0s` | `169.5s` | ![10min GPU 11% faster](https://img.shields.io/badge/10min%20GPU-11%25%20faster-brightgreen)<br>![30min GPU 12% faster](https://img.shields.io/badge/30min%20GPU-12%25%20faster-brightgreen)<br>![60min GPU 13% faster](https://img.shields.io/badge/60min%20GPU-13%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.1.11` | `30.8s` | `217.2s` | `634.9s` | `252.9s` | `162.8s` | ![30min GPU 7% faster](https://img.shields.io/badge/30min%20GPU-7%25%20faster-brightgreen)<br>![60min GPU 11% faster](https://img.shields.io/badge/60min%20GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.1.10` | `15.2s` | `114.9s` | `334.0s` | `108.5s` | `97.9s` | ![30s +48%](https://img.shields.io/badge/30s-%2B48%25-brightgreen)<br>![60s +32%](https://img.shields.io/badge/60s-%2B32%25-brightgreen)<br>![10min +21%](https://img.shields.io/badge/10min-%2B21%25-brightgreen)<br>![30min +21%](https://img.shields.io/badge/30min-%2B21%25-brightgreen) |
@@ -102,7 +103,7 @@ Compared with releases before `1.1.11`, the default tested contract when `Add 2-
 | `1.1.5` | `50.1s` | `no data` | `1513.4s` | `114.9s` | `1158.5s` | ![30s no previous](https://img.shields.io/badge/30s-no%20previous-lightgrey)<br>![60s 0.4% slower](https://img.shields.io/badge/60s-0.4%25%20slower-red)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min 0.4% slower](https://img.shields.io/badge/30min-0.4%25%20slower-red) |
 | `1.1.4` | `49.9s` | `no data` | `1507.6s` | `114.8s` | `1158.3s` | ![30s no data](https://img.shields.io/badge/30s-no%20data-lightgrey)<br>![60s baseline](https://img.shields.io/badge/60s-baseline-lightgrey)<br>![10min no data](https://img.shields.io/badge/10min-no%20data-lightgrey)<br>![30min baseline](https://img.shields.io/badge/30min-baseline-lightgrey) |
 
-Choose `1.1.12` for current parity, generated-stereo behavior, and better long-media speed. Use `1.1.10` only if you need the older release contract without generated-stereo language-priority controls.
+Choose `1.1.13` for current parity, generated-stereo behavior, and better long-media speed. Use `1.1.12` only if you need the previous release contract.
 
 ## Install
 
@@ -113,13 +114,13 @@ Keep the version folder. Do not flatten it.
 Correct layout:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.12/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.13/
 ```
 
 Tdarr loads:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.12/index.js
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.1.13/index.js
 ```
 
 Defaults:
@@ -140,7 +141,8 @@ Defaults:
 
 | Version | Use |
 | --- | --- |
-| `1.1.12` | Current release. Speeds up long generated-stereo fallback jobs, keeps streaming `gpuSourcePort`, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the required matrix. |
+| `1.1.13` | Current release. Speeds up long generated-stereo fallback jobs again, keeps streaming `gpuSourcePort`, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the required matrix. |
+| `1.1.12` | Previous release. Speeds up long generated-stereo fallback jobs, keeps streaming `gpuSourcePort`, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the required matrix. |
 | `1.1.11` | Keeps streaming `gpuSourcePort`, matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on tested long media, and adds language-priority controls for first-language versus all-language 2-channel fallback generation. |
 | `1.1.10` | Uses smaller streaming chunks, stats decode prefetch, and safe unsafe-output-feedback skipping after threshold lock; required parity matrix passed. Faster than CPU on all tested required limiter-heavy primary-stream cases. |
 | `1.1.9` | Parallelizes safe feedback-skip apply windows while preserving exact state and decoded parity; required parity matrix passed. Faster than CPU on tested 10min/30min limiter-heavy media. |

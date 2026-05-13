@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+import time
+
+from apply_passes import ApplyPassResult, run_apply_passes
+from cuda_buffers import allocate_runtime_buffers, free_runtime_buffers
+from cuda_kernels import load_kernel_set
+from device_setup import build_kernel_arg_bindings, close_cuda_session, create_host_io_buffers, initialize_runtime_buffers, open_cuda_session
+from embedded_ptx import EMBEDDED_PTX
+from gain_metrics import GainMetricsResult, run_gain_metrics
+from loudnorm_math import ebur128_filter_coeffs
+from runtime_config import apply_stats_result_to_config, derive_runtime_config, parse_runtime_args
+from runtime_profile import emit_runtime_summary
+from short_source_exact import try_short_source_exact
+from stats_cache import dump_stats_cache, load_stats_cache
+from stats_passes import run_stats_passes
+
+
+def emit_tdarr_progress(phase, fraction):
+    value = min(1.0, max(0.0, float(fraction)))
+    print(f'tdarr_progress phase={phase} fraction={value:.6f}', file=sys.stderr, flush=True)
+
+
+def main():
+    args = parse_runtime_args()
+    start_wall = time.perf_counter()
+    cfg = derive_runtime_config(args)
+
+    if try_short_source_exact(args, cfg, emit_tdarr_progress):
+        return
+    b_coeffs, a_coeffs = ebur128_filter_coeffs(args.rate)
+
+    cuda_session = open_cuda_session(args, EMBEDDED_PTX)
+    try:
+        cuda = cuda_session.cuda
+        kernels = load_kernel_set(cuda, cuda_session.module, args, cfg)
+        buffers, state_bytes = allocate_runtime_buffers(cuda, args, cfg)
+        try:
+            initialize_runtime_buffers(
+                cuda,
+                args,
+                buffers,
+                cfg=cfg,
+                state_bytes=state_bytes,
+                b_coeffs=b_coeffs,
+                a_coeffs=a_coeffs,
+            )
+            kernel_arg_bindings = build_kernel_arg_bindings(args, buffers, cfg)
+            host_io = create_host_io_buffers(cfg)
+
+            if args.stats_cache_input:
+                stats_result = load_stats_cache(args.stats_cache_input, cuda, args, cfg, buffers)
+            else:
+                stats_result = run_stats_passes(
+                    cuda,
+                    args,
+                    cfg=cfg,
+                    buffers=buffers,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    state_bytes=state_bytes,
+                    host_io=host_io,
+                    a_coeffs=a_coeffs,
+                    emit_progress=emit_tdarr_progress,
+                )
+            apply_stats_result_to_config(cfg, stats_result)
+            kernel_arg_bindings.update_frame_totals(total_frames=cfg.total_frames, windows=cfg.windows)
+
+            if args.stats_cache_output:
+                dump_stats_cache(args.stats_cache_output, cuda, args, cfg, buffers, stats_result)
+
+            if args.stats_cache_only:
+                gain_metrics = GainMetricsResult(input_i=float('nan'), gain_min_amp=1.0, gain_max_amp=1.0)
+                apply_result = ApplyPassResult()
+                emit_tdarr_progress('stats_sums', 1.0)
+            else:
+                gain_metrics = run_gain_metrics(
+                    cuda,
+                    args,
+                    cfg=cfg,
+                    buffers=buffers,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    emit_progress=emit_tdarr_progress,
+                )
+
+                apply_result = run_apply_passes(
+                    cuda,
+                    args,
+                    buffers,
+                    cfg=cfg,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    host_io=host_io,
+                    a_coeffs=a_coeffs,
+                    prelimiter_unsafe_flags=gain_metrics.prelimiter_unsafe_flags,
+                    emit_progress=emit_tdarr_progress,
+                )
+        finally:
+            free_runtime_buffers(cuda, buffers)
+    finally:
+        close_cuda_session(cuda_session)
+
+    elapsed = time.perf_counter() - start_wall
+    emit_runtime_summary(
+        args,
+        cfg,
+        gpu_name=cuda_session.gpu_name,
+        elapsed=elapsed,
+        stats_result=stats_result,
+        gain_metrics=gain_metrics,
+        apply_result=apply_result,
+        bindings=kernel_arg_bindings,
+    )
+
+
+if __name__ == '__main__':
+    main()
