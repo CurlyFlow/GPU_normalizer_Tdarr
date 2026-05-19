@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import sys
+import time
+from types import SimpleNamespace
+
+from apply_passes import ApplyPassResult, run_apply_passes
+from cuda_buffers import allocate_runtime_buffers, free_runtime_buffers
+from cuda_kernels import load_kernel_set
+from device_setup import build_kernel_arg_bindings, close_cuda_session, create_host_io_buffers, free_host_io_buffers, initialize_runtime_buffers, open_cuda_session
+from embedded_ptx import EMBEDDED_PTX
+from first_pass_json import emit_first_pass_json
+from gain_metrics import GainMetricsResult, run_gain_metrics
+from loudnorm_math import ebur128_filter_coeffs
+from runtime_config import apply_stats_result_to_config, derive_runtime_config, parse_runtime_args
+from runtime_profile import emit_runtime_summary
+from short_source_exact import try_short_source_exact
+from stats_cache import dump_stats_cache, load_stats_cache
+from stats_passes import run_stats_passes
+from paired_stats import build_stats_context, run_paired_stats_combined_pass, run_paired_stats_pass
+
+
+def build_paired_stats_args(args):
+    values = vars(args).copy()
+    values.update({
+        'rate': args.paired_stats_rate if args.paired_stats_rate > 0 else args.rate,
+        'channels': args.paired_stats_channels,
+        'decode_command_json': args.paired_stats_decode_command_json,
+        'encode_command_json': None,
+        'stats_cache_output': args.paired_stats_cache_output,
+        'stats_cache_input': None,
+        'stats_cache_only': True,
+        'stereo_fallback_source_exact': bool(args.paired_stats_stereo_fallback_source_exact),
+        'paired_stats_decode_command_json': None,
+        'paired_stats_combined_decode_command_json': None,
+        'paired_stats_combined_channels': 0,
+        'paired_stats_cache_output': None,
+        'paired_stats_channels': 0,
+        'paired_stats_rate': 0,
+        'paired_stats_stereo_fallback_source_exact': False,
+    })
+    return SimpleNamespace(**values)
+
+
+def emit_tdarr_progress(phase, fraction):
+    value = min(1.0, max(0.0, float(fraction)))
+    print(f'tdarr_progress phase={phase} fraction={value:.6f}', file=sys.stderr, flush=True)
+
+
+def main():
+    args = parse_runtime_args()
+    start_wall = time.perf_counter()
+    cfg = derive_runtime_config(args)
+
+    if try_short_source_exact(args, cfg, emit_tdarr_progress):
+        return
+    b_coeffs, a_coeffs = ebur128_filter_coeffs(args.rate)
+
+    cuda_session = open_cuda_session(args, EMBEDDED_PTX)
+    try:
+        cuda = cuda_session.cuda
+        kernels = load_kernel_set(cuda, cuda_session.module, args, cfg)
+        buffers, state_bytes = allocate_runtime_buffers(cuda, args, cfg)
+        try:
+            initialize_runtime_buffers(
+                cuda,
+                args,
+                buffers,
+                cfg=cfg,
+                state_bytes=state_bytes,
+                b_coeffs=b_coeffs,
+                a_coeffs=a_coeffs,
+            )
+            kernel_arg_bindings = build_kernel_arg_bindings(args, buffers, cfg)
+            host_io = create_host_io_buffers(cuda, cfg)
+
+            if args.paired_stats_decode_command_json:
+                paired_args = build_paired_stats_args(args)
+                paired_cfg = derive_runtime_config(paired_args)
+                paired_kernels = load_kernel_set(cuda, cuda_session.module, paired_args, paired_cfg)
+                paired_buffers, paired_state_bytes = allocate_runtime_buffers(cuda, paired_args, paired_cfg)
+                try:
+                    initialize_runtime_buffers(
+                        cuda,
+                        paired_args,
+                        paired_buffers,
+                        cfg=paired_cfg,
+                        state_bytes=paired_state_bytes,
+                        b_coeffs=b_coeffs,
+                        a_coeffs=a_coeffs,
+                    )
+                    paired_bindings = build_kernel_arg_bindings(paired_args, paired_buffers, paired_cfg)
+                    paired_host_io = create_host_io_buffers(cuda, paired_cfg)
+                    try:
+                        primary_ctx = build_stats_context(cuda, args, cfg, buffers, kernels, kernel_arg_bindings, state_bytes, host_io, a_coeffs, emit_tdarr_progress)
+                        paired_ctx = build_stats_context(cuda, paired_args, paired_cfg, paired_buffers, paired_kernels, paired_bindings, paired_state_bytes, paired_host_io, a_coeffs, emit_tdarr_progress)
+                        if args.paired_stats_combined_decode_command_json:
+                            paired_results = run_paired_stats_combined_pass(
+                                primary_ctx,
+                                paired_ctx,
+                                cfg.paired_stats_combined_decode_command,
+                                args.paired_stats_combined_channels,
+                            )
+                        else:
+                            paired_results = run_paired_stats_pass(primary_ctx, paired_ctx)
+                        stats_result = paired_results.primary
+                        paired_stats_result = paired_results.partner
+                        apply_stats_result_to_config(cfg, stats_result)
+                        apply_stats_result_to_config(paired_cfg, paired_stats_result)
+                        kernel_arg_bindings.update_frame_totals(total_frames=cfg.total_frames, windows=cfg.windows)
+                        paired_bindings.update_frame_totals(total_frames=paired_cfg.total_frames, windows=paired_cfg.windows)
+                        dump_stats_cache(args.stats_cache_output, cuda, args, cfg, buffers, stats_result)
+                        dump_stats_cache(paired_args.stats_cache_output, cuda, paired_args, paired_cfg, paired_buffers, paired_stats_result)
+                        gain_metrics = GainMetricsResult(input_i=float('nan'), gain_min_amp=1.0, gain_max_amp=1.0)
+                        apply_result = ApplyPassResult()
+                        emit_tdarr_progress('stats_sums', 1.0)
+                    finally:
+                        if 'paired_host_io' in locals():
+                            free_host_io_buffers(cuda, paired_host_io)
+                finally:
+                    free_runtime_buffers(cuda, paired_buffers)
+            elif args.stats_cache_input:
+                stats_result = load_stats_cache(args.stats_cache_input, cuda, args, cfg, buffers)
+            else:
+                stats_result = run_stats_passes(
+                    cuda,
+                    args,
+                    cfg=cfg,
+                    buffers=buffers,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    state_bytes=state_bytes,
+                    host_io=host_io,
+                    a_coeffs=a_coeffs,
+                    emit_progress=emit_tdarr_progress,
+                )
+            if not args.paired_stats_decode_command_json:
+                apply_stats_result_to_config(cfg, stats_result)
+                kernel_arg_bindings.update_frame_totals(total_frames=cfg.total_frames, windows=cfg.windows)
+
+            if args.stats_cache_output and not args.paired_stats_decode_command_json:
+                dump_stats_cache(args.stats_cache_output, cuda, args, cfg, buffers, stats_result)
+
+            if args.stats_cache_only:
+                gain_metrics = GainMetricsResult(input_i=float('nan'), gain_min_amp=1.0, gain_max_amp=1.0)
+                apply_result = ApplyPassResult()
+                emit_tdarr_progress('stats_sums', 1.0)
+            else:
+                gain_metrics = run_gain_metrics(
+                    cuda,
+                    args,
+                    cfg=cfg,
+                    buffers=buffers,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    emit_progress=emit_tdarr_progress,
+                )
+
+                apply_result = run_apply_passes(
+                    cuda,
+                    args,
+                    buffers,
+                    cfg=cfg,
+                    kernels=kernels,
+                    bindings=kernel_arg_bindings,
+                    host_io=host_io,
+                    a_coeffs=a_coeffs,
+                    prelimiter_unsafe_flags=gain_metrics.prelimiter_unsafe_flags,
+                    emit_progress=emit_tdarr_progress,
+                )
+                emit_first_pass_json(cuda, args, cfg, buffers, apply_result)
+        finally:
+            if 'host_io' in locals():
+                free_host_io_buffers(cuda, host_io)
+            free_runtime_buffers(cuda, buffers)
+    finally:
+        close_cuda_session(cuda_session)
+
+    elapsed = time.perf_counter() - start_wall
+    emit_runtime_summary(
+        args,
+        cfg,
+        gpu_name=cuda_session.gpu_name,
+        elapsed=elapsed,
+        stats_result=stats_result,
+        gain_metrics=gain_metrics,
+        apply_result=apply_result,
+        bindings=kernel_arg_bindings,
+    )
+
+
+if __name__ == '__main__':
+    main()
