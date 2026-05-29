@@ -41,6 +41,23 @@ check_plugin_python() {
         "$root/runtime/cuda/compile_cuda_ptx.py"
 }
 
+prune_python_bytecode() {
+    local root=$1
+    [ -d "$root" ] || return 0
+    find "$root" -type d -name __pycache__ -prune -exec rm -rf {} +
+    find "$root" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+}
+
+assert_no_python_bytecode() {
+    local root=$1
+    local found
+    found="$(find "$root" \( -type d -name __pycache__ -o -type f \( -name '*.pyc' -o -name '*.pyo' \) \) -print -quit)"
+    if [ -n "$found" ]; then
+        printf 'ERR: release package contains Python bytecode/cache artifact: %s\n' "$found" >&2
+        exit 1
+    fi
+}
+
 cleanup() {
     rm -rf "$staging"
 }
@@ -62,11 +79,14 @@ mkdir -p "$out_dir"
 out_dir_abs="$(cd "$out_dir" && pwd)"
 
 check_plugin_python "$plugin_dir"
+prune_python_bytecode "$plugin_dir"
 
 mkdir -p "$staging/$package_dir"
 git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
 
 check_plugin_python "$staging/$package_dir/$plugin_dir"
+prune_python_bytecode "$staging/$package_dir"
+assert_no_python_bytecode "$staging/$package_dir"
 
 (cd "$staging" && python3 -m zipfile --create "$out_dir_abs/$asset" "$package_dir")
 sha256sum "$out_dir_abs/$asset" > "$out_dir_abs/$asset.sha256"

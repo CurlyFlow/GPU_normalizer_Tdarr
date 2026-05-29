@@ -1,0 +1,121 @@
+"use strict";
+
+const {
+  createRuntimeExecutionStage,
+  createRuntimeFeatureStage,
+  createRuntimePlanStage,
+} = require("./pluginRuntimeCommandStages");
+
+function createPluginRuntimeCommandContext({
+  args,
+  base,
+  runId,
+  workDir,
+  runShell,
+  planLabelFor,
+  useGpuSourcePort,
+  useStreamingSourcePort,
+  sampleRate,
+  forcedEncodeSampleRate,
+  targetI,
+  targetLra,
+  targetTp,
+  defaultChunkMiB,
+  stereoFallbackChunkMiB,
+  stereoFallbackApplyChunkMiB,
+  originalApplyChunkMiB,
+  sourceChannelsFor,
+  needsInlineStereoDownmix,
+  gpuPlanCoreCommand,
+  maxGain,
+  runtimeCuda,
+  sourceCorePath,
+  durationSeconds,
+  usesStereoFallbackSourcePath,
+}) {
+  const {
+    runChecked,
+    wrapRuntimeProfile,
+  } = createRuntimeExecutionStage({
+    args,
+    base,
+    runId,
+    workDir,
+    runShell,
+    planLabelFor,
+  });
+  const {
+    cpuLoudnormNice,
+    gpuFirstPassAudit,
+    gpuFirstPassMeasure,
+    pairCpuLoudnormMeasure,
+  } = createRuntimeFeatureStage({
+    args,
+    useGpuSourcePort,
+    useStreamingSourcePort,
+  });
+  const {
+    loudnormFilter,
+    loudnessSummary,
+    canSkipOriginalAformat,
+    processingSampleRateFor,
+    encodeSampleRateArgsFor,
+    decodeAudioArgs,
+    rawInputAudioArgs,
+    applyChunkMiBFor,
+    buildCpuLoudnormMeasure,
+    buildPairedCpuLoudnormMeasure,
+    buildGpuFirstPassMeasure,
+    buildRawSourcePortGpuPlan,
+    buildStatsRuntimePlan,
+    buildStreamingGpuPlan,
+    buildPairedStreamingGpuPlan,
+  } = createRuntimePlanStage({
+    args,
+    featureContext: { cpuLoudnormNice },
+    sampleRate,
+    forcedEncodeSampleRate,
+    targetI,
+    targetLra,
+    targetTp,
+    defaultChunkMiB,
+    stereoFallbackChunkMiB,
+    stereoFallbackApplyChunkMiB,
+    originalApplyChunkMiB,
+    sourceChannelsFor,
+    needsInlineStereoDownmix,
+    gpuPlanCoreCommand,
+    maxGain,
+    runtimeCuda,
+    sourceCorePath,
+    durationSeconds,
+    usesStereoFallbackSourcePath,
+  });
+
+  return {
+    applyChunkMiBFor,
+    buildCpuLoudnormMeasure,
+    buildGpuFirstPassMeasure,
+    buildPairedCpuLoudnormMeasure,
+    buildPairedStreamingGpuPlan,
+    buildRawSourcePortGpuPlan,
+    buildStatsRuntimePlan,
+    buildStreamingGpuPlan,
+    canSkipOriginalAformat,
+    decodeAudioArgs,
+    encodeSampleRateArgsFor,
+    gpuFirstPassAudit,
+    gpuFirstPassMeasure,
+    loudnessSummary,
+    loudnormFilter,
+    pairCpuLoudnormMeasure,
+    processingSampleRateFor,
+    rawInputAudioArgs,
+    runChecked,
+    wrapRuntimeProfile,
+  };
+}
+
+module.exports = {
+  createPluginRuntimeCommandContext,
+};

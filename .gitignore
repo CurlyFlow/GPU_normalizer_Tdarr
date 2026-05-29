@@ -15,6 +15,7 @@ node_modules/
 # Internal handoff/reference notes stay local
 AGENTS.md
 docs/
+.agents/
 
 # Local editable source template; release snapshots are tracked per version
 src/
