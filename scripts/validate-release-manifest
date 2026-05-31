@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import stat
+import subprocess
+import sys
+
+
+def fail(message):
+    print(f'ERR: {message}', file=sys.stderr)
+    sys.exit(1)
+
+
+def validate_manifest(manifest_path, version, root, expected_root, tracked):
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as handle:
+            manifest = json.load(handle)
+    except Exception as exc:
+        fail(f'invalid release manifest {manifest_path}: {exc}')
+
+    expected = {
+        'schema': 'gpuNormalizeAudio.releaseSnapshot.v1',
+        'plugin': 'gpuNormalizeAudio',
+        'version': version,
+        'sourcePath': 'src/gpuNormalizeAudio',
+        'snapshotPath': expected_root,
+        'generatedBy': './work/tdarr stage-release-version',
+    }
+    for key, value in expected.items():
+        if manifest.get(key) != value:
+            fail(f'release manifest {key} mismatch: got {manifest.get(key)!r}, expected {value!r}')
+
+    entries = manifest.get('files')
+    if not isinstance(entries, list) or not entries:
+        fail('release manifest files must be a non-empty list')
+
+    seen = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            fail(f'release manifest file entry {index} is not an object')
+        rel = entry.get('path')
+        digest = entry.get('sha256')
+        mode = entry.get('mode')
+        if not isinstance(rel, str) or not rel or rel.startswith('/') or rel.split('/') != [part for part in rel.split('/') if part not in ('', '.', '..')]:
+            fail(f'invalid release manifest file path: {rel!r}')
+        if rel == 'release-manifest.json':
+            fail('release manifest must not hash itself')
+        if rel in seen:
+            fail(f'duplicate release manifest file path: {rel}')
+        if not isinstance(digest, str) or len(digest) != 64 or any(ch not in '0123456789abcdef' for ch in digest):
+            fail(f'invalid sha256 for {rel}')
+        if not isinstance(mode, str) or len(mode) != 4 or any(ch not in '01234567' for ch in mode):
+            fail(f'invalid mode for {rel}')
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            fail(f'release manifest file missing: {rel}')
+        with open(path, 'rb') as handle:
+            actual_digest = hashlib.sha256(handle.read()).hexdigest()
+        if actual_digest != digest:
+            fail(f'release manifest hash mismatch for {rel}')
+        actual_mode = format(stat.S_IMODE(os.stat(path).st_mode), '04o')
+        if actual_mode != mode:
+            fail(f'release manifest mode mismatch for {rel}: got {actual_mode}, expected {mode}')
+        seen[rel] = True
+
+    tracked_rels = []
+    if tracked == '1':
+        tracked_files = subprocess.check_output(['git', 'ls-files', '--', root], text=True).splitlines()
+        for tracked_file in tracked_files:
+            rel = os.path.relpath(tracked_file, root).replace(os.sep, '/')
+            if rel == 'release-manifest.json':
+                continue
+            tracked_rels.append(rel)
+    else:
+        for dirpath, dirs, names in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if d != '__pycache__')
+            for name in sorted(names):
+                if name == 'release-manifest.json' or name == '.DS_Store' or name.endswith(('.pyc', '.pyo')):
+                    continue
+                rel = os.path.relpath(os.path.join(dirpath, name), root).replace(os.sep, '/')
+                tracked_rels.append(rel)
+
+    missing_from_manifest = sorted(set(tracked_rels) - set(seen))
+    if missing_from_manifest:
+        fail('tracked release files missing from manifest: ' + ', '.join(missing_from_manifest[:10]))
+
+    extra_manifest_files = sorted(set(seen) - set(tracked_rels))
+    if extra_manifest_files:
+        fail('manifest files are not tracked in release snapshot: ' + ', '.join(extra_manifest_files[:10]))
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if len(argv) != 5:
+        fail('usage: validate-release-manifest <manifest> <version> <root> <expected-root> <tracked:0|1>')
+    validate_manifest(*argv)
+
+
+if __name__ == '__main__':
+    main()

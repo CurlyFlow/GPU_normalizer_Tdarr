@@ -34,18 +34,13 @@ staging="$(mktemp -d)"
 
 check_plugin_python() {
     local root=$1
+    local pycache_root="$staging/pycache-checks"
     node --check "$root/index.js"
-    python3 -m py_compile \
+    mkdir -p "$pycache_root"
+    PYTHONPYCACHEPREFIX="$pycache_root" python3 -m py_compile \
         "$root/runtime/bin/loudnorm-gpu-source-port" \
         "$root/runtime/bin/"*.py \
         "$root/runtime/cuda/compile_cuda_ptx.py"
-}
-
-prune_python_bytecode() {
-    local root=$1
-    [ -d "$root" ] || return 0
-    find "$root" -type d -name __pycache__ -prune -exec rm -rf {} +
-    find "$root" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 }
 
 assert_no_python_bytecode() {
@@ -58,12 +53,100 @@ assert_no_python_bytecode() {
     fi
 }
 
+assert_no_tracked_python_bytecode() {
+    local root=$1
+    local tracked_file found=""
+    while IFS= read -r tracked_file; do
+        case "$tracked_file" in
+            */__pycache__/*|*.pyc|*.pyo)
+                found=$tracked_file
+                break
+                ;;
+        esac
+    done < <(git ls-files -- "$root")
+    if [ -n "$found" ]; then
+        printf 'ERR: tracked release snapshot contains Python bytecode/cache artifact: %s\n' "$found" >&2
+        exit 1
+    fi
+}
+
+assert_release_manifest() {
+    local root=$1
+    local version=$2
+    local expected_root=$3
+    local tracked=${4:-1}
+    local manifest="$root/release-manifest.json"
+    if [ "$tracked" = 1 ] && ! git ls-files --error-unmatch "$manifest" >/dev/null 2>&1; then
+        printf 'ERR: tracked release snapshot is missing release manifest: %s\n' "$manifest" >&2
+        printf 'Use ./work/tdarr stage-release-version %s to generate a release snapshot with metadata.\n' "$version" >&2
+        exit 1
+    fi
+    python3 scripts/validate-release-manifest "$manifest" "$version" "$root" "$expected_root" "$tracked"
+}
+
+assert_package_inputs_clean() {
+    local untracked
+    untracked="$(git ls-files --others --exclude-standard -- "$@")"
+    if [ -n "$untracked" ]; then
+        printf 'ERR: release package inputs include untracked files. Stage/commit or remove before packaging:\n%s\n' "$untracked" >&2
+        exit 1
+    fi
+    if ! git diff --quiet -- "$@"; then
+        printf 'ERR: release package inputs have uncommitted working-tree changes. Commit or revert before packaging:\n' >&2
+        git diff --name-only -- "$@" >&2
+        exit 1
+    fi
+    if ! git diff --cached --quiet -- "$@"; then
+        printf 'ERR: release package inputs have staged changes not in HEAD. Commit before packaging:\n' >&2
+        git diff --cached --name-only -- "$@" >&2
+        exit 1
+    fi
+}
+
+is_wip_snapshot_name() {
+    case "$1" in
+        *[Ww][Ii][Pp]*|*[Dd][Ee][Vv]*|*[Tt][Mm][Pp]*|*[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+assert_no_tracked_wip_snapshots() {
+    local tracked_file rel tracked_version bad=0
+    declare -A reported=()
+
+    while IFS= read -r tracked_file; do
+        rel=${tracked_file#"$plugin_base"/}
+        tracked_version=${rel%%/*}
+        if is_wip_snapshot_name "$tracked_version" && [ -z "${reported[$tracked_version]+x}" ]; then
+            printf 'ERR: tracked WIP/dev snapshot under %s: %s\n' "$plugin_base" "$tracked_version" >&2
+            reported[$tracked_version]=1
+            bad=1
+        fi
+    done < <(git ls-files -- "$plugin_base")
+
+    if [ "$bad" -ne 0 ]; then
+        printf 'Use ./work/tdarr stage-version for WIP snapshots; only real release folders may be tracked before packaging.\n' >&2
+        exit 1
+    fi
+}
+
 cleanup() {
     rm -rf "$staging"
 }
 trap cleanup EXIT
 
 cd "$repo_root"
+
+if is_wip_snapshot_name "$version"; then
+    printf 'ERR: refusing to package WIP/dev snapshot version: %s\n' "$version" >&2
+    exit 1
+fi
+
+assert_no_tracked_wip_snapshots
 
 if ! git ls-files --error-unmatch "$plugin_dir/index.js" >/dev/null 2>&1; then
     printf 'ERR: missing tracked release folder: %s\n' "$plugin_dir" >&2
@@ -75,17 +158,27 @@ if git grep -n "__PLUGIN_VERSION__" -- "$plugin_dir"; then
     exit 1
 fi
 
+package_inputs=(README.md scripts/package-release scripts/validate-release-manifest "$plugin_dir")
+if [ -f "release-notes/$version.md" ]; then
+    package_inputs+=("release-notes/$version.md")
+fi
+assert_package_inputs_clean "${package_inputs[@]}"
+assert_no_tracked_python_bytecode "$plugin_dir"
+assert_release_manifest "$plugin_dir" "$version" "$plugin_dir" 1
+package_commit="$(git rev-parse --short=12 HEAD)"
+printf 'Packaging tracked release files from commit %s\n' "$package_commit"
+
 mkdir -p "$out_dir"
 out_dir_abs="$(cd "$out_dir" && pwd)"
 
 check_plugin_python "$plugin_dir"
-prune_python_bytecode "$plugin_dir"
 
 mkdir -p "$staging/$package_dir"
 git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
 
+assert_no_python_bytecode "$staging/$package_dir"
+assert_release_manifest "$staging/$package_dir/$plugin_dir" "$version" "$plugin_dir" 0
 check_plugin_python "$staging/$package_dir/$plugin_dir"
-prune_python_bytecode "$staging/$package_dir"
 assert_no_python_bytecode "$staging/$package_dir"
 
 (cd "$staging" && python3 -m zipfile --create "$out_dir_abs/$asset" "$package_dir")

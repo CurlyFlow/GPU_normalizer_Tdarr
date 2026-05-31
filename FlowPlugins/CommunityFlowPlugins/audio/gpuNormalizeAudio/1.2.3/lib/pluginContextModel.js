@@ -1,0 +1,195 @@
+"use strict";
+
+function createPlanSetupInput({ args, preflight, runtimeConfig }) {
+  const { audioConfig, outputPathConfig } = runtimeConfig;
+  return {
+    args,
+    audioStreams: preflight.audioStreams,
+    debugLogging: preflight.debugLogging,
+    audioBitrate: audioConfig.audioBitrate,
+    base: outputPathConfig.base,
+    container: outputPathConfig.container,
+    durationSeconds: outputPathConfig.durationSeconds,
+    ensureStereo: audioConfig.ensureStereo,
+    gpuInputExt: audioConfig.gpuInputExt,
+    gpuInputFormat: audioConfig.gpuInputFormat,
+    gpuOutputExt: audioConfig.gpuOutputExt,
+    gpuOutputFormat: audioConfig.gpuOutputFormat,
+    normalizeOnlyLanguages: audioConfig.normalizeOnlyLanguages,
+    removeOtherLanguages: audioConfig.removeOtherLanguages,
+    runId: outputPathConfig.runId,
+    sampleRate: audioConfig.sampleRate,
+    stereoFallbackFirstOnly: audioConfig.stereoFallbackFirstOnly,
+    stereoLanguageOrder: audioConfig.stereoLanguageOrder,
+    tmpOutputFilePath: outputPathConfig.tmpOutputFilePath,
+    workDir: outputPathConfig.workDir,
+  };
+}
+
+function createPluginExecutionModel({
+  args,
+  pluginStartedAt,
+  planSetup,
+  preflight,
+  runtimeConfig,
+  runtimeCuda,
+  runShell,
+}) {
+  return {
+    core: {
+      args,
+      pluginStartedAt,
+      runtimeCuda,
+      runShell,
+    },
+    planSetup,
+    preflight,
+    runtimeConfig,
+  };
+}
+
+function createRuntimeCommandInput(model) {
+  const { core, planSetup, runtimeConfig } = model;
+  const { audioConfig, outputPathConfig, runtimePathConfig } = runtimeConfig;
+  return {
+    args: core.args,
+    base: outputPathConfig.base,
+    defaultChunkMiB: audioConfig.defaultChunkMiB,
+    durationSeconds: outputPathConfig.durationSeconds,
+    forcedEncodeSampleRate: audioConfig.forcedEncodeSampleRate,
+    gpuPlanCoreCommand: runtimePathConfig.gpuPlanCoreCommand,
+    maxGain: audioConfig.maxGain,
+    needsInlineStereoDownmix: planSetup.needsInlineStereoDownmix,
+    originalApplyChunkMiB: audioConfig.originalApplyChunkMiB,
+    planLabelFor: planSetup.planLabelFor,
+    runId: outputPathConfig.runId,
+    runShell: core.runShell,
+    runtimeCuda: core.runtimeCuda,
+    sampleRate: audioConfig.sampleRate,
+    sourceChannelsFor: planSetup.sourceChannelsFor,
+    sourceCorePath: runtimePathConfig.sourceCorePath,
+    stereoFallbackApplyChunkMiB: audioConfig.stereoFallbackApplyChunkMiB,
+    stereoFallbackChunkMiB: audioConfig.stereoFallbackChunkMiB,
+    targetI: audioConfig.targetI,
+    targetLra: audioConfig.targetLra,
+    targetTp: audioConfig.targetTp,
+    useGpuSourcePort: runtimePathConfig.useGpuSourcePort,
+    usesStereoFallbackSourcePath: planSetup.usesStereoFallbackSourcePath,
+    useStreamingSourcePort: audioConfig.useStreamingSourcePort,
+    workDir: outputPathConfig.workDir,
+  };
+}
+
+function createStatsCoordinatorInput(model, runtimeContext) {
+  const { core, planSetup, preflight, runtimeConfig } = model;
+  const { audioConfig, runtimePathConfig } = runtimeConfig;
+  return {
+    args: core.args,
+    audioPlans: planSetup.audioPlans,
+    buildCpuLoudnormMeasure: runtimeContext.buildCpuLoudnormMeasure,
+    buildGpuFirstPassMeasure: runtimeContext.buildGpuFirstPassMeasure,
+    buildPairedCpuLoudnormMeasure: runtimeContext.buildPairedCpuLoudnormMeasure,
+    buildStatsRuntimePlan: runtimeContext.buildStatsRuntimePlan,
+    debugLogging: preflight.debugLogging,
+    decodeAudioArgs: runtimeContext.decodeAudioArgs,
+    gpuFirstPassAudit: runtimeContext.gpuFirstPassAudit,
+    gpuFirstPassMeasure: runtimeContext.gpuFirstPassMeasure,
+    loudnessSummary: runtimeContext.loudnessSummary,
+    loudnormFilter: runtimeContext.loudnormFilter,
+    needsInlineStereoDownmix: planSetup.needsInlineStereoDownmix,
+    pairCpuLoudnormMeasure: runtimeContext.pairCpuLoudnormMeasure,
+    planLabelFor: planSetup.planLabelFor,
+    processingSampleRateFor: runtimeContext.processingSampleRateFor,
+    runChecked: runtimeContext.runChecked,
+    runShell: core.runShell,
+    sourceChannelsFor: planSetup.sourceChannelsFor,
+    statsCachePathFor: planSetup.statsCachePathFor,
+    trackStatsCachePath: planSetup.trackStatsCachePath,
+    trackStatsPaths: planSetup.trackStatsPaths,
+    useGpuSourcePort: runtimePathConfig.useGpuSourcePort,
+    usesStereoFallbackSourcePath: planSetup.usesStereoFallbackSourcePath,
+    useStreamingSourcePort: audioConfig.useStreamingSourcePort,
+    wrapRuntimeProfile: runtimeContext.wrapRuntimeProfile,
+  };
+}
+
+function createProcessingInput(model, runtimeContext, statsContext) {
+  const { core, planSetup, preflight, runtimeConfig } = model;
+  const { audioConfig, outputPathConfig, runtimePathConfig } = runtimeConfig;
+  return {
+    args: core.args,
+    applyChunkMiBFor: runtimeContext.applyChunkMiBFor,
+    audioBitrate: audioConfig.audioBitrate,
+    audioPlans: planSetup.audioPlans,
+    audioStreams: preflight.audioStreams,
+    audioWork: planSetup.audioWork,
+    buildRawSourcePortGpuPlan: runtimeContext.buildRawSourcePortGpuPlan,
+    buildStreamingGpuPlan: runtimeContext.buildStreamingGpuPlan,
+    buildPairedStreamingGpuPlan: runtimeContext.buildPairedStreamingGpuPlan,
+    canFuseAnyCpuLoudnormWithSplitStats: statsContext.canFuseAnyCpuLoudnormWithSplitStats,
+    canSkipOriginalAformat: runtimeContext.canSkipOriginalAformat,
+    canSplitStatsPlan: statsContext.canSplitStatsPlan,
+    cleanupAll: planSetup.cleanupAll,
+    cleanupFilesForPlan: planSetup.cleanupFilesForPlan,
+    container: outputPathConfig.container,
+    copyOriginal: planSetup.copyOriginal,
+    debugLogging: preflight.debugLogging,
+    decodeAudioArgs: runtimeContext.decodeAudioArgs,
+    describePlan: planSetup.describePlan,
+    durationSeconds: outputPathConfig.durationSeconds,
+    earlyCpuPrefetch: statsContext.earlyCpuPrefetch,
+    earlyCpuPrefetchLimit: statsContext.earlyCpuPrefetchLimit,
+    encodeSampleRateArgsFor: runtimeContext.encodeSampleRateArgsFor,
+    encodeThreadArgs: audioConfig.encodeThreadArgs,
+    getCpuLoudnormRecord: statsContext.getCpuLoudnormRecord,
+    gpuApplyPath: runtimePathConfig.gpuApplyPath,
+    gpuFirstPassMeasure: runtimeContext.gpuFirstPassMeasure,
+    logDebugPlanSummary: planSetup.logDebugPlanSummary,
+    maxGain: audioConfig.maxGain,
+    mux: planSetup.mux,
+    muxWork: planSetup.muxWork,
+    needsInlineStereoDownmix: planSetup.needsInlineStereoDownmix,
+    outputFilePath: outputPathConfig.outputFilePath,
+    planLabelFor: planSetup.planLabelFor,
+    pluginStartedAt: core.pluginStartedAt,
+    prefetchCpuLoudnormFrom: statsContext.prefetchCpuLoudnormFrom,
+    prefetchNextCpuLoudnorm: statsContext.prefetchNextCpuLoudnorm,
+    prefetchNextSplitStats: statsContext.prefetchNextSplitStats,
+    processingOrder: statsContext.processingOrder,
+    processingPlans: statsContext.processingPlans,
+    processingSampleRateFor: runtimeContext.processingSampleRateFor,
+    pythonPath: runtimePathConfig.pythonPath,
+    rawInputAudioArgs: runtimeContext.rawInputAudioArgs,
+    removedAudioPlans: planSetup.removedAudioPlans,
+    requireGpuWorker: preflight.requireGpuWorker,
+    runChecked: runtimeContext.runChecked,
+    runShell: core.runShell,
+    sampleRate: audioConfig.sampleRate,
+    skippedAudioPlans: planSetup.skippedAudioPlans,
+    sourceCorePath: runtimePathConfig.sourceCorePath,
+    splitPrefetchNextStatsAtProgress: statsContext.splitPrefetchNextStatsAtProgress,
+    splitPrefetchNextStatsDuringStats: statsContext.splitPrefetchNextStatsDuringStats,
+    startCpuLoudnormTask: statsContext.startCpuLoudnormTask,
+    startSplitStatsTask: statsContext.startSplitStatsTask,
+    stereoFallbackSourceExact: planSetup.stereoFallbackSourceExact,
+    targetI: audioConfig.targetI,
+    targetLra: audioConfig.targetLra,
+    targetTp: audioConfig.targetTp,
+    tmpOutputFilePath: outputPathConfig.tmpOutputFilePath,
+    totalWork: planSetup.totalWork,
+    updateProgress: planSetup.updateProgress,
+    useGpuSourcePort: runtimePathConfig.useGpuSourcePort,
+    usesStereoFallbackSourcePath: planSetup.usesStereoFallbackSourcePath,
+    useStreamingSourcePort: audioConfig.useStreamingSourcePort,
+    workerType: preflight.workerType,
+    wrapRuntimeProfile: runtimeContext.wrapRuntimeProfile,
+  };
+}
+
+module.exports = {
+  createProcessingInput,
+  createPlanSetupInput,
+  createPluginExecutionModel,
+  createRuntimeCommandInput,
+  createStatsCoordinatorInput,
+};
