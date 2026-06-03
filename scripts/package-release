@@ -84,6 +84,32 @@ assert_release_manifest() {
     python3 scripts/validate-release-manifest "$manifest" "$version" "$root" "$expected_root" "$tracked"
 }
 
+assert_release_notes() {
+    local version=$1
+    local notes="release-notes/$version.md"
+    if ! git ls-files --error-unmatch "$notes" >/dev/null 2>&1; then
+        printf 'ERR: missing tracked release notes: %s\n' "$notes" >&2
+        printf 'Release notes must include TLDR, Performance, CPU reference, and parity coverage before packaging.\n' >&2
+        exit 1
+    fi
+    if ! grep -Fqx '## TLDR' "$notes"; then
+        printf 'ERR: release notes missing required section: ## TLDR\n' >&2
+        exit 1
+    fi
+    if ! grep -Fqx '## Performance' "$notes"; then
+        printf 'ERR: release notes missing required section: ## Performance\n' >&2
+        exit 1
+    fi
+    if ! grep -Eiq 'SRC_CPU|CPU[^\n]*Normalize Audio|Normalize Audio[^\n]*CPU' "$notes"; then
+        printf 'ERR: release notes must reference the CPU Normalize Audio baseline.\n' >&2
+        exit 1
+    fi
+    if ! grep -Eiq 'parity|decoded audio|energy_similarity' "$notes"; then
+        printf 'ERR: release notes must state decoded parity coverage.\n' >&2
+        exit 1
+    fi
+}
+
 assert_package_inputs_clean() {
     local untracked
     untracked="$(git ls-files --others --exclude-standard -- "$@")"
@@ -158,10 +184,8 @@ if git grep -n "__PLUGIN_VERSION__" -- "$plugin_dir"; then
     exit 1
 fi
 
-package_inputs=(README.md scripts/package-release scripts/validate-release-manifest "$plugin_dir")
-if [ -f "release-notes/$version.md" ]; then
-    package_inputs+=("release-notes/$version.md")
-fi
+assert_release_notes "$version"
+package_inputs=(README.md scripts/package-release scripts/validate-release-manifest "release-notes/$version.md" "$plugin_dir")
 assert_package_inputs_clean "${package_inputs[@]}"
 assert_no_tracked_python_bytecode "$plugin_dir"
 assert_release_manifest "$plugin_dir" "$version" "$plugin_dir" 1
@@ -185,15 +209,8 @@ assert_no_python_bytecode "$staging/$package_dir"
 sha256sum "$out_dir_abs/$asset" > "$out_dir_abs/$asset.sha256"
 
 {
-    printf '## TLDR\n\n'
-    printf 'Release package for `v%s`.\n\n' "$version"
-    if [ -f "release-notes/$version.md" ]; then
-        cat "release-notes/$version.md"
-        printf '\n\n'
-    else
-        printf '## Performance\n\n'
-        printf 'No release-specific performance notes are tracked for `v%s`. Do not claim performance acceptance without comparing against Tdarr CPU-only `Normalize Audio`.\n\n' "$version"
-    fi
+    cat "release-notes/$version.md"
+    printf '\n\n'
     printf 'Install path inside Tdarr, intentionally versioned so releases can coexist:\n\n'
     printf '```text\n'
     printf '%s/%s/\n' "$plugin_base" "$version"
