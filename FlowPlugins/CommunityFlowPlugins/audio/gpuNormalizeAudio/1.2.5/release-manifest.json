@@ -13,7 +13,7 @@
     {
       "mode": "0644",
       "path": "lib/audioCommandHelpers.js",
-      "sha256": "bd526e7ff2e4885a85544f959267e8f977b181c83ddd9c9a15af748e8f734749"
+      "sha256": "102ab5dc38914ac18f3542405dfdaf3e7b237f555895f5295c4d739b90f09b1f"
     },
     {
       "mode": "0644",
@@ -83,7 +83,7 @@
     {
       "mode": "0644",
       "path": "lib/cpuLoudnormScheduler.js",
-      "sha256": "8bd5739808f93c8a90aa6b98b95f3f0ee4303293b856105734b3e011b9aad444"
+      "sha256": "d43043316245b128605f337f7e91f80b0b2661a46ad756bc32f8986c0b50c394"
     },
     {
       "mode": "0644",
@@ -118,7 +118,7 @@
     {
       "mode": "0644",
       "path": "lib/outputMux.js",
-      "sha256": "7ff30714fdcb95f412d4beec0116b76f9837f0fd0bba54777ba6a776bc436349"
+      "sha256": "738850c56e8c1d546db0510d1154c2030fe209f9e1dc936d49ed56b7567a9e50"
     },
     {
       "mode": "0644",
@@ -138,7 +138,7 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyConfig.js",
-      "sha256": "2de08dbba90a9ffad319b222fabbee9b7e930af5b395f98340a14038718eaa66"
+      "sha256": "2f6bd3cef9bd3dbac9d8c68a9944005ce977aa612292ce5f6448cc7d9a453fd6"
     },
     {
       "mode": "0644",
@@ -148,7 +148,7 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyDirectMuxContext.js",
-      "sha256": "00232d339abc49961fe880e20cf790ad6fa6a304b964b4b54113efee9d952a37"
+      "sha256": "de851ccc4fd62eb9e7936a14ec60fe9fe209811f01ae6274568d2d1714cdc317"
     },
     {
       "mode": "0644",
@@ -158,7 +158,7 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyFirstReady.js",
-      "sha256": "31fe4dd94545ef4e1d90f36fd49f05bb0856f64b501402a6869f08cf0eb39d03"
+      "sha256": "7aa68ebff0592858d176572170aeeae6b03111187713889f691c84af91c63208"
     },
     {
       "mode": "0644",
@@ -178,12 +178,12 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyRelayCommands.js",
-      "sha256": "917614f93d11f69a0ed69061bbdf722b7ad99cc0b363100774ec60f10ffc6824"
+      "sha256": "c94d6997266f01ccd43a696d0109a9bd911f4cb8fcc39c8b586f7e9aa6162eb2"
     },
     {
       "mode": "0644",
       "path": "lib/pairedApplyRuntimePlan.js",
-      "sha256": "0b2e847734afb228329928de2703083aa5da144603f5c7582c4a915c5d694a1c"
+      "sha256": "df8a4a1917767f2876bc2cd7ed67d2aebb0b504c895317baa800710f5eea58c5"
     },
     {
       "mode": "0644",
@@ -193,7 +193,7 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyRuntimeShellContext.js",
-      "sha256": "e88d3fe0a17e020bb8fd2ef05d7108be19646fdaae73db1a5db460815d2bbd94"
+      "sha256": "283ddcccf7b82e2a572e84ec88f5fc2655b80caed2cdcab652ba71128d1ac83d"
     },
     {
       "mode": "0644",
@@ -203,12 +203,12 @@
     {
       "mode": "0644",
       "path": "lib/pairedApplyShellScript.js",
-      "sha256": "a15d5d52dad4a6b9facf9f5f95c661183f39a8f5cbae97337ff8c28ac15a7277"
+      "sha256": "c254a95d4066e34f016046d58fdd64a7f66ff373682ef04baeb113eabfe0cc7f"
     },
     {
       "mode": "0644",
       "path": "lib/pairedApplyStrategy.js",
-      "sha256": "2d422248789d6f38c71e77446772befe4609e2261e4c6605b5e1a8cba1c8b3b2"
+      "sha256": "d19ace2e1e577a21132d675ba9e654cf269ceec576d9766235b72d4030e1fe27"
     },
     {
       "mode": "0644",
@@ -218,7 +218,7 @@
     {
       "mode": "0644",
       "path": "lib/pluginAudioConfig.js",
-      "sha256": "9d26f9a04606fc865654a5679be6f79bd65a27d88439554a011817fbe76a4a1a"
+      "sha256": "009d6914188b22c27d4cd05ce8689f99298b4291e9d78b387f053fbf29a4a7bd"
     },
     {
       "mode": "0644",
@@ -368,7 +368,7 @@
     {
       "mode": "0644",
       "path": "lib/processingOrder.js",
-      "sha256": "cb81351d6d516f87f7eeb433394bebf87cef0c58ba7b26727199f47ecc540b3b"
+      "sha256": "01068d4c56b38265e32e8df1fd6a2ee066dfc4ff284fba20e109f30493605c7d"
     },
     {
       "mode": "0644",
@@ -423,7 +423,7 @@
     {
       "mode": "0644",
       "path": "lib/splitStatsConfig.js",
-      "sha256": "8df3cfa3c1aa5232611e4c8e260b76911f7e682329bf8cac0030bb29cb511e4e"
+      "sha256": "025919b65ab9c43ce55f741fe719524cfad013d5dc66ff7215399f433f99a05c"
     },
     {
       "mode": "0644",
@@ -433,17 +433,17 @@
     {
       "mode": "0644",
       "path": "lib/splitStatsPairedScript.js",
-      "sha256": "043000e786feeaefa1bb69b7330fe357f9b0d4c9da15697b5cf951ee3bbde5d9"
+      "sha256": "2dddddb8d34fcd52a450371e2e65c08bbf2fa6ebc613d2d54c6ad930b39dbc2e"
     },
     {
       "mode": "0644",
       "path": "lib/splitStatsPairedScriptVariants.js",
-      "sha256": "c465ad103a3b86cbbaa7f8e41071ed804f08695450ed58ee78f4c710185283a2"
+      "sha256": "f71d140a553905b3a05ffd8c67c22e403afe9635e9beaa30f4fe43804c07039c"
     },
     {
       "mode": "0644",
       "path": "lib/splitStatsPairedTask.js",
-      "sha256": "4b035ec2e798f25bc06f59dc3ea53acb317251604eb0c489e2d8b436cb0eba19"
+      "sha256": "79eff74f8741307c41652de87b566b6b6b30caeaa86407ab3c4068cd64c53604"
     },
     {
       "mode": "0644",
@@ -458,7 +458,7 @@
     {
       "mode": "0644",
       "path": "lib/splitStatsStrategy.js",
-      "sha256": "171de581c1eb1783b44bd9d436816ecaf86881b7a8992630927f461a510211c7"
+      "sha256": "e4fbb28579584a8a8c4a60c86ccf9bac23bb08f9ac6106088aa9efdf1f159527"
     },
     {
       "mode": "0644",
@@ -608,7 +608,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/cuda_kernel_manifest.py",
-      "sha256": "91cf14f7f2dc4f478af400cd725d150c2248cb07814a0e3c4c88b35d1aef4c08"
+      "sha256": "d4a77cd7854fcbc5de125bc1be71d05e692859adac64544ba1730374c1715689"
     },
     {
       "mode": "0644",
@@ -638,7 +638,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/exact_stream_window.py",
-      "sha256": "604b09c2db4f5f9eeccbf6ce38ee8cadc1043e9d60bb4fd8eb9683b4cf6e7609"
+      "sha256": "da16127b9ab6ac2da5008b129563911582374fb8067590ad8ce61b21c7dee723"
     },
     {
       "mode": "0644",
@@ -648,7 +648,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/feedback_launchers.py",
-      "sha256": "110c1330a16510e35cc6323ca6e8e264d7504241c3bc6c53a4ac78cf2fef5418"
+      "sha256": "43b76ea8dc5e718283602116f6a7fbe882bcb70c90e9f1d9bdc5e4fcad1d3808"
     },
     {
       "mode": "0644",
@@ -668,7 +668,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/kernel_args.py",
-      "sha256": "353a350531234d99ef072b20b5fd35852117cbfdf57879e7f3bf8db4da227f1e"
+      "sha256": "9abd376aeba48f6b12b416526505a1fcdda76141d8b62ead8dc8552e6c1bb092"
     },
     {
       "mode": "0644",
@@ -683,7 +683,7 @@
     {
       "mode": "0755",
       "path": "runtime/bin/loudnorm-gpu-source-port",
-      "sha256": "7899b63b6338c61472b867d5b419a7e67928cf08dbbafe5b101363d10bed91d3"
+      "sha256": "98268e7932a3dd759131453ba230d4ff4709b445e4e11ac66b55bf216061420f"
     },
     {
       "mode": "0644",
@@ -703,12 +703,12 @@
     {
       "mode": "0644",
       "path": "runtime/bin/paired_apply_orchestrator.py",
-      "sha256": "0795ef94988951d85b86b6608eb01f444c34ae8f98c7eca722f2d55a2f818f51"
+      "sha256": "5a4ce32f74267da4cbafd130f58eaaba781bc35f5aa8fb89107f3fe9fd413219"
     },
     {
       "mode": "0644",
       "path": "runtime/bin/paired_apply_relay.py",
-      "sha256": "2a7d93fadc20f082b7f303b299aa89b63aa673a538243b2c0a037d4c3c84f10d"
+      "sha256": "db0a3ce9eff2df490a3ba639669bc37fbe056b05e1640c075baac6a004ef0a94"
     },
     {
       "mode": "0644",
@@ -718,12 +718,12 @@
     {
       "mode": "0644",
       "path": "runtime/bin/runtime_config.py",
-      "sha256": "f5fa4cc6d2ebb301bce5d771ebfefeb7201fcc05cff53380118b2fad01a12b34"
+      "sha256": "0bc8408827b94ff89148c49336fbb7893c80c3dac693369f2be5fd5e6b78357c"
     },
     {
       "mode": "0644",
       "path": "runtime/bin/runtime_config_sections.py",
-      "sha256": "f3087a745cf9efc4f21204e2253f3630b9f80ee1397cd65f7cac1e8e7abab64e"
+      "sha256": "7ae4dd62e92b305bf15d89afc024039fa38a536381e8b4c4ed1efe3179e209b9"
     },
     {
       "mode": "0644",
@@ -738,7 +738,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/runtime_profile.py",
-      "sha256": "ced2368ce50a26f4bcbabe53ff56a51d2a686fa7c222bbdf0ce0d4a759e10754"
+      "sha256": "1bf4124640bfbb9fa8cb8a1e5f3135ac84fc8eaae8dbeba6d1c938be1cce5c86"
     },
     {
       "mode": "0644",
@@ -808,7 +808,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/stream_chunk_reader.py",
-      "sha256": "77d3bd1cbfde8836542019a17ea58e7b81d529900d34b9ed9eb782acee5380e8"
+      "sha256": "fd4b777001e85621caf58b04332b9c84bb2867041bd1c6b8e7df92f010606db1"
     },
     {
       "mode": "0644",
@@ -833,7 +833,7 @@
     {
       "mode": "0644",
       "path": "runtime/bin/sync_apply.py",
-      "sha256": "68ce5dbd12fcfefe47b1ec56925e1ff7a197a46f9d0e0f03c6e36ec8238c17b5"
+      "sha256": "27135bc08e8204fba59d8e6d96de0979e15d5a12cafc26c94578b865fa875c98"
     },
     {
       "mode": "0644",
@@ -883,12 +883,12 @@
     {
       "mode": "0644",
       "path": "runtime/cuda/loudnorm_safe_feedback_prefill_kernels.cuh",
-      "sha256": "dd382f396643cb9de7e4c9d130be503492f2e74ddbd2313bc458353b8400e55f"
+      "sha256": "004c5928f14c7ed497c821f33ecaebe8259ff9b5309b1146d700ded6528c12a1"
     },
     {
       "mode": "0644",
       "path": "runtime/cuda/loudnorm_safe_feedback_skip_kernels.cuh",
-      "sha256": "e64a210c58ef996f87ff4574579fbe5d78130eec76a0cc4dbc19c7c3668fc3d7"
+      "sha256": "92924aeced78b498f8c837685436ff23442593246eadcb5ddaf9e0406e117a92"
     },
     {
       "mode": "0644",
@@ -898,7 +898,7 @@
     {
       "mode": "0644",
       "path": "runtime/cuda/loudnorm_source_port_kernels.ptx",
-      "sha256": "16ffb846dbc833b82af17dac52b7f341721f41b2b4cac601b0e1f81776cc7cc3"
+      "sha256": "e4cc4ba0f6a7fd305b2b7d4f7442c831d19e529d0e7ab60d4a237ad9bc4fcec8"
     },
     {
       "mode": "0644",
@@ -939,7 +939,7 @@
   "generatedBy": "./work/tdarr stage-release-version",
   "plugin": "gpuNormalizeAudio",
   "schema": "gpuNormalizeAudio.releaseSnapshot.v1",
-  "snapshotPath": "FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.4",
+  "snapshotPath": "FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.5",
   "sourcePath": "src/gpuNormalizeAudio",
-  "version": "1.2.4"
+  "version": "1.2.5"
 }

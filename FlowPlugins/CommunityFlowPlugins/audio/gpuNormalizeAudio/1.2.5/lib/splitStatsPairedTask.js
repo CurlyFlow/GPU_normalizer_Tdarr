@@ -2,6 +2,7 @@
 
 const {
   loudnormNumber,
+  parseLoudnormJsonFromOutputOrFile,
   parseLoudnormJsonBlocksFromOutputs,
 } = require("./common");
 const {
@@ -82,22 +83,28 @@ function createPairedSplitStatsTaskStarter({
       const result = { ...res, statsSampleRate, statsCache, pairedStats: true };
       const partnerResult = { ...res, statsSampleRate: partnerStatsSampleRate, statsCache: partnerStatsCache, pairedStats: true };
       if (fusePairedCpuMeasure) {
-        const blocks = parseLoudnormJsonBlocksFromOutputs(res.output, [plan.measureErr, statsErr, partnerStatsErr]);
-        if (blocks.length < 2) throw new Error("GPU normalize: paired fused stats CPU loudnorm did not produce two JSON blocks");
-        const stereoValues = blocks[0];
-        const originalValues = blocks[1];
-        for (const values of [originalValues, stereoValues]) {
+        const stereoValues = strategy.rawTeeCpuMeasure
+          ? parseLoudnormJsonFromOutputOrFile("", plan.measureErr)
+          : null;
+        const originalValues = strategy.rawTeeCpuMeasure
+          ? parseLoudnormJsonFromOutputOrFile("", partner.measureErr)
+          : null;
+        const blocks = strategy.rawTeeCpuMeasure ? [] : parseLoudnormJsonBlocksFromOutputs(res.output, [plan.measureErr, statsErr, partnerStatsErr]);
+        if (!strategy.rawTeeCpuMeasure && blocks.length < 2) throw new Error("GPU normalize: paired fused stats CPU loudnorm did not produce two JSON blocks");
+        const measuredStereoValues = strategy.rawTeeCpuMeasure ? stereoValues : blocks[0];
+        const measuredOriginalValues = strategy.rawTeeCpuMeasure ? originalValues : blocks[1];
+        for (const values of [measuredOriginalValues, measuredStereoValues]) {
           for (const loudnormKey of ["input_i", "input_tp", "input_lra", "input_thresh", "target_offset"]) loudnormNumber(values, loudnormKey);
         }
         const baseMeasureRecord = {
           wallSec: 0,
-          source: "fused_split_stats",
+          source: strategy.rawTeeCpuMeasure ? "raw_tee_split_stats" : "fused_split_stats",
           background: false,
           queuedSec: 0,
           fusedStatsSec: res.wallSec,
         };
-        const originalMeasureRecord = { ...baseMeasureRecord, values: originalValues };
-        const stereoMeasureRecord = { ...baseMeasureRecord, values: stereoValues };
+        const originalMeasureRecord = { ...baseMeasureRecord, values: measuredOriginalValues };
+        const stereoMeasureRecord = { ...baseMeasureRecord, values: measuredStereoValues };
         cpuLoudnormMeasurementStore.publishFused(partner, originalMeasureRecord);
         cpuLoudnormMeasurementStore.publishFused(plan, stereoMeasureRecord);
         result.cpuLoudnormRecord = stereoMeasureRecord;
