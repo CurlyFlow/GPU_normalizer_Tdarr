@@ -1,0 +1,945 @@
+{
+  "files": [
+    {
+      "mode": "0644",
+      "path": "index.js",
+      "sha256": "ba7d350aa00fabd414f867af1215532fd5ba973262a2a847db5eece7ee44ad13"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioChannelHelpers.js",
+      "sha256": "0bf786bad16c700eb96865bc10d60a0498fd4a9f364a1179b973b4c9bfd8841f"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioCommandHelpers.js",
+      "sha256": "2eb40b65621e8c9204e7ad4c38cc4ef3b7e4be53e058918e8a7f1c088bba6b97"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioLanguageData.js",
+      "sha256": "55292383fded040e9a2fef0b3566612fd2bc61b5767df5883132860062eb213b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioLanguageOrder.js",
+      "sha256": "02eea5d397082e9755e005de1e0391138d7ff0fa9866a4a922dfa11e0d6b50c1"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioPlanConstruction.js",
+      "sha256": "b50946f737c481c85a670f481f7ce791b49b3acd0b8b138ba78bcdec8fb865e3"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioPlanRuntimeContext.js",
+      "sha256": "217b88a63b27b3d614ed69a346b1caff69d4f66578d3402886f369310b582204"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioSelection.js",
+      "sha256": "dddaaa89dcfc8e532d8168903f94a168cfa5f4ea887c496c92b9818caf0cd092"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/audioStereoFallbackSelection.js",
+      "sha256": "06942f05cf6c3a76a09ca3fb6303dfc8a0cfe0545b88d7d790971bc57beef3a7"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/commandRenderer.js",
+      "sha256": "571a8eb022814f06d4a311886a6f7f5dabc6290e7ce096ebb59bf9ff481bd585"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/common.js",
+      "sha256": "44116e34f8dcb89773dbaca2c986e9be137e5d95226778832a93a44acfcf7274"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/concurrencyLock.js",
+      "sha256": "ba90bcb31eba6f75463533fd070ab5c4c056c4d2d8ac0ed6551fb6824bd8cc95"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/concurrencyLockState.js",
+      "sha256": "b0f994c2c7ff23b57b0af3db7c9e8a884cd1e1cba91563d0fc8181b1541bc885"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnorm.js",
+      "sha256": "d72613c2eccd2b0b89acfb133efbe6c9843cef626ba8fc8db8105e5e45cf9c06"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormGpuFirstPassTask.js",
+      "sha256": "57cbeaafa7701f17ba9c96c70d6755f8a20f17ac0dd380f61ceeb83563851b4c"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormMeasureTasks.js",
+      "sha256": "563e03cb1532a6ea2737b2d4422c08ae43b6bb4afc86c5574bc235e3439f2aff"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormScheduler.js",
+      "sha256": "e758f3a8564415344913aeb1deb2fef85a942fdc0e95af113a144009611c244a"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormTaskRunners.js",
+      "sha256": "d3fabfcecfe6325ce154598b4ff0b726663eefc615515c8f9ab1f4432e88a3a0"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormTaskUtils.js",
+      "sha256": "a37fe5f426296083b77a2e6e097ee5fdc8f1bf03e11e4f13fcfa0eedbb92ea01"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/cpuLoudnormTelemetry.js",
+      "sha256": "66ae47ee727b2248684bd7e4d360c37dcc68f1464ef6599effc26155947966fd"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/loudnormMeasurementStore.js",
+      "sha256": "30c7a332344ae13392134b3d12db7f4feb97c932bf799ada500f7900be78891e"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/loudnormParsing.js",
+      "sha256": "12c3a211b48061479f9c2ec0718f3c8591727f69d1a983e04dcaf664db846862"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/outputFinalizer.js",
+      "sha256": "a9ff092ba67bccd5c2f003457903b2deedfb94a13c3e0e14bafcbb1a375bbb66"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/outputMux.js",
+      "sha256": "c48868699efb7bed05a1a2b55bf7b2daac55763aba0d9745aa6e029317b06ab1"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/outputPublish.js",
+      "sha256": "0f7a87c60f67310d61fb7cb6d8c0bc4dc07cac78c58abc67354794ae5246aa60"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApply.js",
+      "sha256": "db01c02e5516a91fa922196011a522e8d7333eea0ec9ff9f119893f28c0536d5"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyCompletion.js",
+      "sha256": "40d6ce916debebac6de784d3a3593ab0663fe99229dd847a819d151d3381e92b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyConfig.js",
+      "sha256": "d870a687d06870c38a5c041af3e29ee79167f5bde078c1417ab1ac141b7ee3a6"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyCoordinator.js",
+      "sha256": "a50ab7be2ccd6fe6c41291c3fa9a5f3cbbb11ae6ebc45c3a381d0a0e607e9533"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyDirectMuxContext.js",
+      "sha256": "de851ccc4fd62eb9e7936a14ec60fe9fe209811f01ae6274568d2d1714cdc317"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyExecution.js",
+      "sha256": "d82f320777762a82db84c423fdba1971c5cf770572a417952ae5ccc99e11af32"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyFirstReady.js",
+      "sha256": "500928d1f9217d099d7d39817b3f8799dcd657fc9f7baab15f4e6f66880ced02"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyGpuPlans.js",
+      "sha256": "bebce151c485ffb8dbe492f915cf94bb79925367d71c89a0c781ba8c42a8a6d4"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyPrepPair.js",
+      "sha256": "332281998cf498e8504600a39e2f5aca200b875b3f6cb287754fd808e7f7d2f1"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyPreparation.js",
+      "sha256": "f97b0f650ce615c33ded48b0c3cbcde678c6053c07256352a622f9732fe5acef"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyRelayCommands.js",
+      "sha256": "c94d6997266f01ccd43a696d0109a9bd911f4cb8fcc39c8b586f7e9aa6162eb2"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyRuntimePlan.js",
+      "sha256": "df8a4a1917767f2876bc2cd7ed67d2aebb0b504c895317baa800710f5eea58c5"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyRuntimeRunner.js",
+      "sha256": "a76d14a97920498276394957c0340c1014567c606c21f3ba29b250ced9f101ab"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyRuntimeShellContext.js",
+      "sha256": "283ddcccf7b82e2a572e84ec88f5fc2655b80caed2cdcab652ba71128d1ac83d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyRuntimeStage.js",
+      "sha256": "8e8ff4e3dc8903936788a0b9eeb0f6830922ac0dbd60d54b89bc41e4f9236221"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyShellScript.js",
+      "sha256": "c254a95d4066e34f016046d58fdd64a7f66ff373682ef04baeb113eabfe0cc7f"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pairedApplyStrategy.js",
+      "sha256": "d19ace2e1e577a21132d675ba9e654cf269ceec576d9766235b72d4030e1fe27"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/planContext.js",
+      "sha256": "4098379d63e2f8584d322d6ec1bdfe3c56b4fb035ffdd305840b6f4f5b0c8d12"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginAudioConfig.js",
+      "sha256": "009d6914188b22c27d4cd05ce8689f99298b4291e9d78b387f053fbf29a4a7bd"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginBootstrap.js",
+      "sha256": "17aef9b74b4cbf5e6642a0bccb13ebeaad841899e7e4df319484179adbe2a0f3"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginCommandBuilderContext.js",
+      "sha256": "f3c41db18221ec2e9326c92bef38a766dbc3346efad0667a536c40dce8be30da"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginConfig.js",
+      "sha256": "50ead4a5cf0369252679f58ceb2f0fc304c4f8389e9924d59ecf277bab995322"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginContextModel.js",
+      "sha256": "88d34030fcdf8538224e587a98541ffbca02ab9f49b9810ed0959fb4838cd95e"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginCpuLoudnormContext.js",
+      "sha256": "68e8b68be0015385b0132a1a0fff88908f75e9ebd93d5ffa7256fb52912f1ef7"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginDebugLogging.js",
+      "sha256": "1c12de4405f1bae776732e34d2a0932ac453d520ce7c6cb3262618c6b66c98cc"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginDetails.js",
+      "sha256": "bbff61b4cf8f70fc304cd594f928cd89f035433338e36b4f6bc404ad043c63e1"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginExecutionContext.js",
+      "sha256": "09ffcc62e252e9f596f6f39ba018c10e7c11a9d5bb893b77548eb7587890ea96"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginMain.js",
+      "sha256": "075be3ae5ece94f0e6f34686c111d0b7b195b70680e99cca2d236a7fa31b268d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginMainSetup.js",
+      "sha256": "e785ff57da77cc80eea5cdd1aa4b63db4c945a12400f9b1dbf7c17611bde69cb"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginOutputContext.js",
+      "sha256": "fc93ddda3b963cd498e171d03612715b117f5f4be3638807dbfa1ccad25402a8"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginOutputPathConfig.js",
+      "sha256": "1c5721f1c0963b32b4fe5072907b6b1fe3db7508b03ec434caf03e56ff779dde"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPairedApplyContext.js",
+      "sha256": "85e1d0c6fcce8a197bd7b8b44301d1525cc9da27506ccb18cb911b535350fb45"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPipeline.js",
+      "sha256": "a23049776025be9e5a8f3bbe4bc275c8bc20e762d6e18edbbca0104d26ca795d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPipelineStages.js",
+      "sha256": "5ebeba6d9aad17ede1f2a19ce991a6c5e3514baed3cfcb082be189f283e779bc"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPlanHelpers.js",
+      "sha256": "0755e3fddb0b93950fb8173918cbd0e020370cf3baa340583e409bb563d86dad"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPlanSetup.js",
+      "sha256": "b517cc2fcbfea3d81f2963e159808fb5ed35a2f17574316487d8ebea67722d50"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginPreflight.js",
+      "sha256": "aaa50957abe0c201e2c67a287ea2eccb803a7130b9cfaefa4c997bf47e252971"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginProcessingContext.js",
+      "sha256": "d06bb9bd8b3453c084c0395cea35146744fdddd5e9a4be4a63167a49f3863dda"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginProcessingCoordinators.js",
+      "sha256": "1fd5400e9cb08a7a5eaa72d297d97809539491036565e1c80d32714793a45390"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginRuntimeCommandContext.js",
+      "sha256": "d6472fda6287870de3a744299a714ff8f6bf951f7aee3deb411c3201ff92d2df"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginRuntimeCommandModel.js",
+      "sha256": "7b1e641024ea3821b09c4e5a6d378520efce252486dedfb7b8226f1f173c0abd"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginRuntimeFeatureConfig.js",
+      "sha256": "be0f27348bb8b4d30b31691ffac5f573b0150872c96d6ca96f2e7a5df661175d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginRuntimePathConfig.js",
+      "sha256": "388fb704bb4e1a1e2730dd05ffa3b3505e445609d13a43266ad36db0b61fb4e9"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginRuntimePlanContext.js",
+      "sha256": "c5b7fde96e20b82dc51005750faff2d9c0362376172bec7c0858a6b7b3fda2df"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginSplitStatsContext.js",
+      "sha256": "fb760e16dff4c12dfd625bf05f7b277c2db84938dfe137411363b8a45b511c92"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginStatsCoordinatorContext.js",
+      "sha256": "e2bc8a0b65bf13e30a5db0669b1e922909d9e8102e7bfcde630070c7879d7a66"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginStatsCoordinatorStages.js",
+      "sha256": "d454c2d75760244ff557262a00742f285bf9fd3e922bd7174c55291a33d57530"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/pluginStreamContext.js",
+      "sha256": "afbf1731c5304f02ddfb1e36b91a8255b10d859c1b5279dc546360b5b15d2577"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/processingOrder.js",
+      "sha256": "cb81351d6d516f87f7eeb433394bebf87cef0c58ba7b26727199f47ecc540b3b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/profileHelpers.js",
+      "sha256": "9d7e5e8cecedaec4caf3ca93a71ad901090792ae86434cc1cfabcfa2b8be0cbc"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/progressHelpers.js",
+      "sha256": "81e947f1bcfdd04ad7df95977272dca4dcad14d6d6d265d9cbfb936856591772"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/rawFileCommands.js",
+      "sha256": "8e90894f7baeeeee34b1218904203263c6f5e1a35a03751eef65354cdbf432b0"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/rawFileNormalizeStep.js",
+      "sha256": "2ac41aab02f61f975dc8fabacabb7d30ed4dc03018131f12bd4821b8b8019357"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/rawFileProcessor.js",
+      "sha256": "5cc802d10e12f67efd0b72a8cf769c6b3f0bcc142800ec9d6c7b625107007892"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/runtimeExecution.js",
+      "sha256": "f91d4ff3c9629ad9382d0973d0970a4f2990f5fc711d58276baf393ec796f479"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/runtimePaths.js",
+      "sha256": "c03be8e50e26309f331654cbcf5a577f0c2ef6f5a2c82358c25030c1f8d84268"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/runtimePlanArgs.js",
+      "sha256": "538a31b92d56b4f8d9d13c373ef71cd5a9587e011221731b6a46e63849ba674d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/runtimePlans.js",
+      "sha256": "550105b690a76579665af350a5a8658498aa4c4a4c013a6ec572abaf0538f483"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/shell.js",
+      "sha256": "f2075a64095a42721242bf90534ad3232e269afa3688000e32a5a11b3dbad40c"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsConfig.js",
+      "sha256": "025919b65ab9c43ce55f741fe719524cfad013d5dc66ff7215399f433f99a05c"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsCoordinator.js",
+      "sha256": "3ee1e11cef1795e2ffc457fc6ae93dd8b047afbfb03d4d272ceea6c9df80d568"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsPairedScript.js",
+      "sha256": "2dddddb8d34fcd52a450371e2e65c08bbf2fa6ebc613d2d54c6ad930b39dbc2e"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsPairedScriptVariants.js",
+      "sha256": "f71d140a553905b3a05ffd8c67c22e403afe9635e9beaa30f4fe43804c07039c"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsPairedTask.js",
+      "sha256": "79eff74f8741307c41652de87b566b6b6b30caeaa86407ab3c4068cd64c53604"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsPolicy.js",
+      "sha256": "ad833ff3fb4770ff0b045b5469a85d3a38f64966bce3099af82aac05704d7994"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsSingleTask.js",
+      "sha256": "1ac0c14b8847169a138318c94d7b4a2dbfaf948cff195a836da66d0642c6a685"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsStrategy.js",
+      "sha256": "e4fbb28579584a8a8c4a60c86ccf9bac23bb08f9ac6106088aa9efdf1f159527"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsTaskDispatcher.js",
+      "sha256": "52249fd808989815a646a56690bacaac6eb2c13728abe6bf5c634d9129835625"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/splitStatsTaskStarters.js",
+      "sha256": "faddeeea93bfaa29e05311fcc8a095b7085733da8222eab7f1a48461d0d34e1b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/statsCacheValidation.js",
+      "sha256": "aa929a61ac31a98e40d7c826e920867a9622192f3e947bd7cb0cb5cabca7170b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamApplyBackend.js",
+      "sha256": "e5b60594e81f5d6588783563d11afdd4e905ec63aecdecad21de595dd396cb6c"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamCompletionTelemetry.js",
+      "sha256": "9602ad8208846c6d8b0c1b34b2a72a9c6c253f8abbdd26a91386763c6726dd0d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamParallelApplyWorker.js",
+      "sha256": "7134d1a5dac81f42e0bcf1a87d97039eb227244f7a7d7bc9b29d16a2a0a9f68d"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamParallelMeasurement.js",
+      "sha256": "22711e78cc77681ae31d2f89d9a83fc831933f97a12b7faf8174d877df807829"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamParallelProcessor.js",
+      "sha256": "3c2e01940876dbd8943aa53ae491e301dd63ed681539e6a03c53b7916ceb52b3"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPipelineDeps.js",
+      "sha256": "fb26b7a924f796bf006f8bd12ef03b61883aaea2f3d86bb798d02b2908027870"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPlanCapabilities.js",
+      "sha256": "5677f75a7fd8b923be0ba1737a0c98653ac2182e79f4e297489106a470ecadb0"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPlanCpuMeasure.js",
+      "sha256": "8d4893d247ed5cf6d0d3b651d7857cbeeb925cfe31c26674a28c851da8244dae"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPlanPreparation.js",
+      "sha256": "f4680a3d2bc023292caf38decba5093c0b21a99326656ed8f98f65b5c55379a8"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPlanSplitStats.js",
+      "sha256": "673f343bc6948c3baec3acd17780530c3f133ca12a721dd5a296bc9af1978394"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamPlanState.js",
+      "sha256": "e6e2d1b5cc1cfecb0006c7e28a6bbfe4a1bae4d196663bb584617445918d5540"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamProcessor.js",
+      "sha256": "109ccf5d7bca8bda6bfb0ca664af1cca5f2cbb40c09d15e2b7a725d562cc9487"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamProcessorPolicy.js",
+      "sha256": "b08478ac143d0000406afcfecdd8d6350a38869265129d0e34e9ff6dad140a7b"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamProcessorRoutes.js",
+      "sha256": "bba3eabef597eb620fe7dab501d8bfd5a04b0e8eee0b84b4a498f925944f4835"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialApplyDispatch.js",
+      "sha256": "2d49581300dfa50757ae3cc54fd9b59b28cc26540a63893f252f9aa603fc8f81"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialApplyRouter.js",
+      "sha256": "b5d5387c83003f717632be79c57a7ae41f885cfdc40dc1f74e7a5560820701bc"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialMeasuredRoute.js",
+      "sha256": "011f68f854011deec9a6b8731c8dfe2af4f427df9305ba2130abc27083070039"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialPairedApplyRoute.js",
+      "sha256": "ddbd729b7b303b95bbd47922f12fd0398989417f34961ce0e7d5f3c677856cb1"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialPlanRunner.js",
+      "sha256": "0f9da32bba95169cddb654f246f8be03c6d663676aec8f2d80dc8cde47a50651"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamSerialProcessor.js",
+      "sha256": "9b7f6bd65b19e121e9a328411f3eea81af1f8978a31441882facfcfed34356c4"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamingCommands.js",
+      "sha256": "10387de51cfb5eb60edf102409910c348ea50f8a8290cc80267516bc461d8442"
+    },
+    {
+      "mode": "0644",
+      "path": "lib/streamingSourcePortProcessor.js",
+      "sha256": "826c186ee7f358f9b1f564d27dfc501f03506816ec892d664089c24f6a7c699f"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/apply_passes.py",
+      "sha256": "73c685e7841b02015603b87ffc81ab4d2cc26982f3bcc2c8767391d4dce0697e"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/async_apply.py",
+      "sha256": "476b06475178c636aac88e467a2caf7a3bb5e2f32f6b993c36abe1e960d5dcde"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/cuda_buffers.py",
+      "sha256": "8227b03b4324965aef1b9b69bee3c95df99f5683d9bd4f36a3f19a0fe7cf2a92"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/cuda_driver.py",
+      "sha256": "eb662bc3c022d41536ea34b8787824599f91b7b4e2f9e1f616e7289fdea0aad3"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/cuda_kernel_manifest.py",
+      "sha256": "d4a77cd7854fcbc5de125bc1be71d05e692859adac64544ba1730374c1715689"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/cuda_kernels.py",
+      "sha256": "310809617d039876fd881a7de9883e950ac079a2cd56dea21a242ddc3ed04783"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/cuda_launch.py",
+      "sha256": "db3480fcb90fd1accff8feb4f3bef78e7a45c89af471d54745bedbbc52a05a46"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/device_setup.py",
+      "sha256": "7da8cf25585981d9a6c4b68f4ccef640ad6dda128d2e2af1f888b2df9e76e516"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/embedded_ptx.py",
+      "sha256": "408633879261426a1f9edde373ca6d7bead6946f17081f7dff833c93848d1fe1"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/exact_apply_plan.py",
+      "sha256": "000cc57f35aeb82ae2e4481f2d2a710a57404ddfd99f80268fec3f456ffef8e9"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/exact_stream_window.py",
+      "sha256": "da16127b9ab6ac2da5008b129563911582374fb8067590ad8ce61b21c7dee723"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/feedback_apply.py",
+      "sha256": "d775e4a51bfc125a13f172a71a52483dd5d81b2f251a8b3daf81cf745b6de108"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/feedback_launchers.py",
+      "sha256": "2e4eb4225e95c6700bc868cd5e03314370e082129ba4e8566e569fd401865279"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/feedback_modes.py",
+      "sha256": "cd378df5cd72a30f9e4bf4de987e93bfec9edaedffb5dd04da4eb1c374799348"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/first_pass_json.py",
+      "sha256": "c7bd22e7436f1d747ce6eb1baaecf9938b39593d523419608a4f15b8459c56d4"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/gain_metrics.py",
+      "sha256": "4ffc0ee979384a9fe3090f6f3d1bf9779b815c7dc83ff4bdfef1233d2ef5f632"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/kernel_args.py",
+      "sha256": "ebd428ada306212e9247ca380d5bfc477f67927dc0829a2e33986556775687cf"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/kweight_state.py",
+      "sha256": "a0cc7a81ff66058dd334cde9f01345a44c94862f6d163498d0305caf1ba53963"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/limiter_risk.py",
+      "sha256": "0381047ada4b2f705678a0b006430d6445d6ad61c3194444740079654ac0a12b"
+    },
+    {
+      "mode": "0755",
+      "path": "runtime/bin/loudnorm-gpu-source-port",
+      "sha256": "5e68780db8167c69ba9dae50f4e948bcfc2cc074e97ef83c8b31bcae05c6c1f8"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/loudnorm_math.py",
+      "sha256": "b054106688e21af5b252bd0c63e00402d232236f0626d0e55c3aef619d042680"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/opx_loudnorm_channel_stats.c",
+      "sha256": "a2a426b78bc05ca544df524dcd3b51bbafd95defd8e81e6654ac52c773a40e2e"
+    },
+    {
+      "mode": "0755",
+      "path": "runtime/bin/opx_loudnorm_channel_stats.so",
+      "sha256": "cd09d2fbc7a1024ac11adb42289b6ab2da077afdfa18d8daf10263b11a44d543"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/paired_apply_orchestrator.py",
+      "sha256": "5a4ce32f74267da4cbafd130f58eaaba781bc35f5aa8fb89107f3fe9fd413219"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/paired_apply_relay.py",
+      "sha256": "db0a3ce9eff2df490a3ba639669bc37fbe056b05e1640c075baac6a004ef0a94"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/paired_stats.py",
+      "sha256": "aec9f921d2c8f14107ac1a58131b5ed84d24c953e4c5f83e009eb45369125434"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_config.py",
+      "sha256": "dd1740f8c5e5cd5432c6dd8c07d742a0fc9fd669dc4f5003baecf5558465fe91"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_config_sections.py",
+      "sha256": "d261a624263b212eba45de1ed7d77361c46f6129f8c7c1ce623a6ec0aed16000"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_env.py",
+      "sha256": "6b85825199e073128dfbb611e9293b064346cae955398ccc4a0058abed4dcea2"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_modes.py",
+      "sha256": "f18b2bbb3c73b166945cf55ee7abbf97c597f3765d4db0772904446d79a92f09"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_profile.py",
+      "sha256": "a892c3f8e32327950cfb7cca4577d123513949c35cc9850b7518d8c4ba4d61fb"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/runtime_secondary_args.py",
+      "sha256": "c92e19c56c6faa45e0e9721797b98cb156d2a4bb2483a32d05da996e8d94fd20"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/short_source_exact.py",
+      "sha256": "3816824053eaf37c4468f9deb834f8e41625334462cb27163569ddcfed324816"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_cache.py",
+      "sha256": "0b3af3c3628fced6f7d1f5be3edc003fb287913f0325d64383507919fb18ac7e"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_channel_native.py",
+      "sha256": "7280489c5008c055731081f4e5aa52dc413be02f980c7cf9771ae1468ff55067"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_channel_pass.py",
+      "sha256": "91b80c3a07e8e596b4ea55c18905b36958f7d7361fbb7881346be1681d5a7a54"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_channel_pipeline.py",
+      "sha256": "e26ce679fc2e293d56b8fccd411dea40b9c3b4a2b5bbca1d76b7648109475f34"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_passes.py",
+      "sha256": "69bb6f106a30a4fa461178d3a7a0863dc057c593b8583418b14ff41033eebdc9"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_q_sums.py",
+      "sha256": "eb4e99cc2b4499dae4a24e2ab7480566cb3081def1e96f00a5f1538a52c4d115"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_source_audit.py",
+      "sha256": "f8c29210cbad876e352263a1725893fc90577e8c48bd9b1439449f570ec55a28"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_source_precompute.py",
+      "sha256": "bea3f373704bb2419a5581ca4db435a9fdb67ca201305887120deb240bd53dba"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_source_runner.py",
+      "sha256": "e1f218ffc7a7bdcd7e83a123ffe837caabb997d878e695370c37edca78b8e62f"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_source_stage.py",
+      "sha256": "546adbfbd117bd173ae5ccab768fc301c5a1422324cf63929ecf525c28c82f70"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stats_subpasses.py",
+      "sha256": "573db8f8ab2824f49d5acd4561ca6cd33567b4e483a6bc040d75efd5d222cfd3"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stream_chunk_reader.py",
+      "sha256": "fd4b777001e85621caf58b04332b9c84bb2867041bd1c6b8e7df92f010606db1"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stream_encode_writer.py",
+      "sha256": "e1c48ad0a228d0b389cb8723cde98548e36335ac75991958eee947d81de1063d"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stream_env.py",
+      "sha256": "518350f4ca8e5cb260944898ec05a31fd7e48bd592e6bb2f6e2f650f07aa5b6b"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stream_io.py",
+      "sha256": "65af4cd51696cd7820398eda45b79834eaffa78b01c12d6e9b998517662e7f11"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/stream_processes.py",
+      "sha256": "a14241750fa6d18b1ab0f021475ec4acf94662566995e0141c26cd2990136965"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/sync_apply.py",
+      "sha256": "e95bd0021e885585e1c34a5fc0ad514763f7056766bbb97b546e08f1a1ab07e7"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/sync_apply_chunks.py",
+      "sha256": "a75a447a9f41b793b6c298dbc4c44810b422220fa5110d3e04413da7aae68681"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/bin/sync_feedback.py",
+      "sha256": "3f8ebee35792fac4273dd25556822c8ecd7a7f749613baba1aa90ed713e1028b"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/compile_cuda_ptx.py",
+      "sha256": "9d105fdc71dbc344aa14d2ca70f3650ca16e5d88f786c146ee5bb4361860f760"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_common.cuh",
+      "sha256": "d4e0d6eec3006d93627c24ed6f28c29a8b9cee242311fa6c9463eab0cb61907d"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_feedback_apply_kernels.cuh",
+      "sha256": "65eb411b82445d76f0d740386342313e2470102260b52c3430f6d8d638fe78f9"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_feedback_source_ring.cuh",
+      "sha256": "22ad1d12d1aac17dcf8b6385bfa97e4833389aee693350cd546c4ad989c08c51"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_gain_plan_kernels.cuh",
+      "sha256": "7dea95aa6b7db1a56e2bb5b2e35d1ffb9b2370dcc39287378e0553c63ccff6e9"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_limiter_peak_helpers.cuh",
+      "sha256": "677ddce7e9a13f3e5a64fa988b68752533e5d49267c8c40df25341d759bfa1a8"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_safe_feedback_apply_kernels.cuh",
+      "sha256": "156d09eeafab319f5c5f3fd1a4bba770be30c26346c39e74b2318eb58edb51ea"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_safe_feedback_prefill_kernels.cuh",
+      "sha256": "004c5928f14c7ed497c821f33ecaebe8259ff9b5309b1146d700ded6528c12a1"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_safe_feedback_skip_kernels.cuh",
+      "sha256": "168dc0ad9b09e488e8b5b4009c3280bae6a9cb792803b508b754ece290c5744e"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_source_port_kernels.cu",
+      "sha256": "19003fb0de6eed46b0fca91a76032f70894cd9a716870869ff3465fb48d392c1"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_source_port_kernels.ptx",
+      "sha256": "449d08815d4920b57fb60e1aab8da38570b29df9b19c61959e7c0862b237787a"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_source_precompute_base_kernels.cuh",
+      "sha256": "9884f0fd97d91b4dd1393d8d354fb44694502badecfbffbec0378de4174f61df"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_source_precompute_exact_kernels.cuh",
+      "sha256": "5498d675d100b5ecd6ba3243dd4bd3d417031d4f58c8cfc8a3c6d32b9b63a18f"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_source_window_helpers.cuh",
+      "sha256": "5a42a9dcc3fd5fabeedffb8a37617ec79b92d83579e44442eae0f4ddfb4e88e4"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_stats_offset_kernels.cuh",
+      "sha256": "bbfffc0d8be87d0024ff8c8599b87eee698ced5f5cff0841e7cd0ab70065324f"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_stats_window_kernels.cuh",
+      "sha256": "afa8a03f0595f689ac29221486bd7c84b9c2168697cbe6a60bd8a12eff555d8a"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_stream_feedback_state.cuh",
+      "sha256": "73b2a1b40710afe0d388975d86e0ce49fe5aed80a2b7c98571755f363e6454b7"
+    },
+    {
+      "mode": "0644",
+      "path": "runtime/cuda/loudnorm_true_peak_limiter.cuh",
+      "sha256": "dacda3580602f2abadc29681fa29ad942c6d4a43bd2df1e567bccaace211486b"
+    }
+  ],
+  "generatedBy": "./work/tdarr stage-release-version",
+  "plugin": "gpuNormalizeAudio",
+  "schema": "gpuNormalizeAudio.releaseSnapshot.v1",
+  "snapshotPath": "FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.7",
+  "sourcePath": "src/gpuNormalizeAudio",
+  "version": "1.2.7"
+}
