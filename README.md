@@ -38,13 +38,13 @@ Keep the version folder. Do not flatten it.
 Correct layout:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.7/
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.8/
 ```
 
 Tdarr loads:
 
 ```text
-FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.7/index.js
+FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.8/index.js
 ```
 
 Tdarr Docker CUDA library path hint:
@@ -73,45 +73,45 @@ Defaults:
 
 ## Performance (i9 9900k @ 5ghz vs. Nvidia 1050 TI)
 
-Latest release: `v1.2.7`.
+Latest release: `v1.2.8`.
 
-`1.2.7` keeps the streaming `gpuSourcePort` path, runs the same-source original 5.1 stream and generated 2-channel fallback as parallel serial routes on long jobs, uses CPU first-pass measurement for short codec-smoke media to preserve exact refreshed CPU-reference parity, and preserves exact decoded parity against Tdarr CPU `Normalize Audio` on the full validated matrix. By default the release UI prefers English for both `Track Order` and `Normalize ONLY Languages` (`eng,en`), `Remove Other Languages` is on, and `Fallback To Undetected Audio` is on. Clear `Normalize ONLY Languages` or enter `all` to normalize every audio stream. If selected languages match no streams while removal is on, undetected audio is copied unchanged when present; if no desired or undetected audio would remain, the job fails instead of producing a no-audio output.
+`1.2.8` keeps the streaming `gpuSourcePort` path, promotes the accepted long-media optimization stack, fixes a post-success generated-stereo fallback teardown crash, and preserves exact decoded parity against Tdarr CPU `Normalize Audio` on the validated matrix. By default the release UI prefers English for both `Track Order` and `Normalize ONLY Languages` (`eng,en`), `Remove Other Languages` is on, and `Fallback To Undetected Audio` is on. Clear `Normalize ONLY Languages` or enter `all` to normalize every audio stream. If selected languages match no streams while removal is on, undetected audio is copied unchanged when present; if no desired or undetected audio would remain, the job fails instead of producing a no-audio output.
 
 The table below uses a 5.1 source that has no existing stereo track. The GPU job writes both the normalized original 5.1 stream and the generated normalized 2-channel fallback, then both decoded streams are compared against Tdarr CPU `Normalize Audio` output. `SRC_CPU` time is split the same way: the original CPU `Normalize Audio` job for the 5.1 stream, plus a CPU `Normalize Audio` reference for the generated 2-channel source.
 
 `Speed vs CPU` uses measured SRC_CPU/GPU wall time: above `1.0x` is faster than CPU, below `1.0x` is slower than CPU.
 
-60min TLDR: original 5.1 `2.451x` faster (`1123.3s` CPU vs `458.4s` GPU), generated 2ch `1.012x` faster (`283.4s` CPU vs `280.1s` GPU), combined job `3.039x` faster (`1406.7s` CPU vs `462.9s` GPU), parity pass for both decoded streams.
+60min TLDR: original 5.1 `2.842x` faster (`1123.3s` CPU vs `395.3s` GPU), generated 2ch `1.068x` faster (`283.4s` CPU vs `265.4s` GPU), combined job `3.522x` faster (`1406.7s` CPU vs `399.4s` GPU), parity pass for both decoded streams.
 
-30min TLDR: original 5.1 `2.214x` faster (`528.6s` CPU vs `238.8s` GPU), generated 2ch `0.923x` by itself (`140.4s` CPU vs `152.1s` GPU), combined job `2.777x` faster (`669.0s` CPU vs `241.0s` GPU), parity pass for both decoded streams. `1.2.7` is a long-media combined-wall speed release over `1.2.6`.
+30min TLDR: original 5.1 `2.633x` faster (`528.6s` CPU vs `200.8s` GPU), generated 2ch `1.065x` faster (`140.4s` CPU vs `131.9s` GPU), combined job `3.298x` faster (`669.0s` CPU vs `202.8s` GPU), parity pass for both decoded streams. `1.2.8` is a long-media combined-wall speed and stability release over `1.2.7`.
 
 ### 60min
 
-| Workload | CPU reference | GPU `1.2.7` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.2.8` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `1123.3s` | `458.4s` | `2.451x` | ![GPU 145% faster](https://img.shields.io/badge/GPU-145%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `283.4s` | `280.1s` | `1.012x` | ![GPU 1% faster](https://img.shields.io/badge/GPU-1%25%20faster-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `1406.7s` | `462.9s` | `3.039x` | ![GPU 204% faster](https://img.shields.io/badge/GPU-204%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `1123.3s` | `395.3s` | `2.842x` | ![GPU 184% faster](https://img.shields.io/badge/GPU-184%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `283.4s` | `265.4s` | `1.068x` | ![GPU 7% faster](https://img.shields.io/badge/GPU-7%25%20faster-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `1406.7s` | `399.4s` | `3.522x` | ![GPU 252% faster](https://img.shields.io/badge/GPU-252%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 30min
 
-| Workload | CPU reference | GPU `1.2.7` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.2.8` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `528.6s` | `238.8s` | `2.214x` | ![GPU 121% faster](https://img.shields.io/badge/GPU-121%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `140.4s` | `152.1s` | `0.923x` | ![GPU 8% slower](https://img.shields.io/badge/GPU-8%25%20slower-orange)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `669.0s` | `241.0s` | `2.777x` | ![GPU 178% faster](https://img.shields.io/badge/GPU-178%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `528.6s` | `200.8s` | `2.633x` | ![GPU 163% faster](https://img.shields.io/badge/GPU-163%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `140.4s` | `131.9s` | `1.065x` | ![GPU 6% faster](https://img.shields.io/badge/GPU-6%25%20faster-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `669.0s` | `202.8s` | `3.298x` | ![GPU 230% faster](https://img.shields.io/badge/GPU-230%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 ### 10min
 
-| Workload | CPU reference | GPU `1.2.7` | Speed vs CPU | Result |
+| Workload | CPU reference | GPU `1.2.8` | Speed vs CPU | Result |
 | --- | ---: | ---: | ---: | --- |
-| Original 5.1 | `168.6s` | `85.4s` | `1.975x` | ![GPU 98% faster](https://img.shields.io/badge/GPU-98%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
-| Generated 2ch | `49.9s` | `53.3s` | `0.936x` | ![GPU 6% slower](https://img.shields.io/badge/GPU-6%25%20slower-orange)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
-| Combined | `218.5s` | `86.1s` | `2.537x` | ![GPU 154% faster](https://img.shields.io/badge/GPU-154%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Original 5.1 | `168.6s` | `70.4s` | `2.395x` | ![GPU 140% faster](https://img.shields.io/badge/GPU-140%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen) |
+| Generated 2ch | `49.9s` | `44.4s` | `1.124x` | ![GPU 12% faster](https://img.shields.io/badge/GPU-12%25%20faster-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
+| Combined | `218.5s` | `71.1s` | `3.073x` | ![GPU 207% faster](https://img.shields.io/badge/GPU-207%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 
 Short smoke clips are used only for parity checks and are intentionally excluded from the main README performance tables. Longer media is the intended target and is where the GPU path now catches and passes CPU on the tested 5.1 plus generated-2ch workload.
 
-Codec smoke coverage for `1.2.7` also passed exact decoded parity for AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and a multi-audio sample. The multi-audio smoke also verifies language-scope behavior: blank means all languages, omitted means release default English with other languages removed, `Remove Other Languages=false` copies non-selected audio unchanged, and no language match fails safely when no desired or undetected audio would remain.
+Codec smoke coverage for `1.2.8` covers AAC stereo, MP3 stereo, AC3 5.1, E-AC-3 5.1, DTS 5.1, and a multi-audio sample. The multi-audio smoke also verifies language-scope behavior: blank means all languages, omitted means release default English with other languages removed, `Remove Other Languages=false` copies non-selected audio unchanged, and no language match fails safely when no desired or undetected audio would remain.
 
 2-channel fallback behavior:
 
@@ -128,6 +128,7 @@ Compared with releases before `1.1.11`, the default tested contract when `Add Ge
 
 | Version | 10min GPU Time | 30min GPU Time | Exact Stats Time | Exact Apply Time | Speed Change vs Previous |
 | --- | ---: | ---: | ---: | ---: | --- |
+| `1.2.8` | `71.1s` | `202.8s` | `26.1s` | `124.2s` | ![60min combined 14% faster vs 1.2.7](https://img.shields.io/badge/60min%20combined-14%25%20faster-brightgreen)<br>![30min combined 16% faster vs 1.2.7](https://img.shields.io/badge/30min%20combined-16%25%20faster-brightgreen)<br>![10min combined 17% faster vs 1.2.7](https://img.shields.io/badge/10min%20combined-17%25%20faster-brightgreen)<br>![stereo fallback crash fixed](https://img.shields.io/badge/stereo%20fallback%20crash-fixed-blue)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.2.7` | `86.1s` | `241.0s` | `26.9s` | `140.0s` | ![60min combined 30% faster vs 1.2.6](https://img.shields.io/badge/60min%20combined-30%25%20faster-brightgreen)<br>![30min combined 26% faster vs 1.2.6](https://img.shields.io/badge/30min%20combined-26%25%20faster-brightgreen)<br>![10min combined 22% faster vs 1.2.6](https://img.shields.io/badge/10min%20combined-22%25%20faster-brightgreen)<br>![long speed target passed](https://img.shields.io/badge/long%20speed%20target-passed-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.2.6` | `58.1s` | `172.2s` | `22.7s` | `133.1s` | ![60min GPU 19% faster vs 1.2.5](https://img.shields.io/badge/60min%20GPU-19%25%20faster-brightgreen)<br>![30min GPU 16% faster vs 1.2.5](https://img.shields.io/badge/30min%20GPU-16%25%20faster-brightgreen)<br>![10min GPU 13% faster vs 1.2.5](https://img.shields.io/badge/10min%20GPU-13%25%20faster-brightgreen)<br>![long speed target passed](https://img.shields.io/badge/long%20speed%20target-passed-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.2.5` | `120.3s` | `359.2s` | `19.6s` | `100.0s` | ![60min GPU 79% faster](https://img.shields.io/badge/60min%20GPU-79%25%20faster-brightgreen)<br>![30min GPU 93% faster](https://img.shields.io/badge/30min%20GPU-93%25%20faster-brightgreen)<br>![10min GPU 81% faster](https://img.shields.io/badge/10min%20GPU-81%25%20faster-brightgreen)<br>![long speed target passed](https://img.shields.io/badge/long%20speed%20target-passed-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
@@ -141,7 +142,7 @@ Compared with releases before `1.1.11`, the default tested contract when `Add Ge
 | `1.1.11` | `217.2s` | `634.9s` | `252.9s` | `162.8s` | ![30min GPU 7% faster](https://img.shields.io/badge/30min%20GPU-7%25%20faster-brightgreen)<br>![60min GPU 11% faster](https://img.shields.io/badge/60min%20GPU-11%25%20faster-brightgreen)<br>![5.1 parity passed](https://img.shields.io/badge/5.1%20parity-passed-brightgreen)<br>![+2ch parity passed](https://img.shields.io/badge/%2B2ch%20parity-passed-brightgreen) |
 | `1.1.10` | `114.9s` | `334.0s` | `108.5s` | `97.9s` | ![10min +21%](https://img.shields.io/badge/10min-%2B21%25-brightgreen)<br>![30min +21%](https://img.shields.io/badge/30min-%2B21%25-brightgreen) |
 
-Choose `1.2.7` for current parity, the fastest validated long combined jobs, parallel same-source original plus generated-stereo execution, short-media CPU first-pass codec-smoke parity, fallback to undetected audio when language tags are missing, safe no-audio failure behavior, and release/diagnostic tooling hardening. Use `1.2.6` only if you need the previous speed-release snapshot.
+Choose `1.2.8` for current parity, the fastest validated long combined jobs, the stereo-fallback crash fix, accepted long-media scheduling/defaults, fallback to undetected audio when language tags are missing, safe no-audio failure behavior, and release/diagnostic tooling hardening. Use `1.2.7` only if you need the previous speed-release snapshot.
 
 For `1.2.3`, the exact-stats workers run as an overlapped pair. The history row lists the slower worker time, not the sum of both overlapped worker counters.
 
@@ -149,7 +150,8 @@ For `1.2.3`, the exact-stats workers run as an overlapped pair. The history row 
 
 | Version | Use |
 | --- | --- |
-| `1.2.7` | Current release. Runs same-source original plus generated 2-channel fallback routes in parallel on long jobs, keeps short-media CPU first-pass for codec parity, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the full validated matrix. |
+| `1.2.8` | Current release. Promotes the accepted long-media optimization defaults, fixes a post-success generated-stereo fallback teardown crash, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the validated matrix. |
+| `1.2.7` | Previous release. Runs same-source original plus generated 2-channel fallback routes in parallel on long jobs, keeps short-media CPU first-pass for codec parity, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the full validated matrix. |
 | `1.2.6` | Previous release. Uses original-only GPU first-pass acceleration to speed up long 5.1 plus generated 2-channel fallback jobs, keeps fallback to undetected audio and safe no-audio failure behavior, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the full validated matrix. |
 | `1.2.5` | Previous release. Speeds up long 5.1 plus generated 2-channel fallback jobs, keeps fallback to undetected audio and safe no-audio failure behavior, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the full validated matrix. |
 | `1.2.4` | Previous release. Adds fallback to undetected audio, fails safely if selected language removal would leave no audio, keeps faster-than-CPU long combined jobs, and matches CPU decoded output for normalized 5.1 plus generated 2-channel fallback on the full validated matrix. |
