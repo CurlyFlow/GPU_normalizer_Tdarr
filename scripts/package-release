@@ -15,17 +15,10 @@ if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
     exit 2
 fi
 
-version=$1
-out_dir=${2:-work/release-assets/v$version}
-
-case "$version" in
-    ""|*[!A-Za-z0-9._-]*)
-        printf 'ERR: invalid version: %s\n' "$version" >&2
-        exit 2
-        ;;
-esac
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+version=$1
+python3 "$repo_root/scripts/release_policy.py" assert-valid "$version"
+out_dir=${2:-work/release-assets/v$version}
 plugin_base="FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio"
 plugin_dir="$plugin_base/$version"
 asset="GPU_normalize_audio_tdarr-$version.zip"
@@ -84,6 +77,11 @@ assert_release_manifest() {
     python3 scripts/validate-release-manifest "$manifest" "$version" "$root" "$expected_root" "$tracked"
 }
 
+assert_release_snapshot_policy() {
+    local root=$1
+    python3 scripts/release_snapshot_policy.py scan "$root"
+}
+
 assert_release_notes() {
     local version=$1
     local notes="release-notes/$version.md"
@@ -130,14 +128,7 @@ assert_package_inputs_clean() {
 }
 
 is_wip_snapshot_name() {
-    case "$1" in
-        *[Ww][Ii][Pp]*|*[Dd][Ee][Vv]*|*[Tt][Mm][Pp]*|*[Ss][Nn][Aa][Pp][Ss][Hh][Oo][Tt]*)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+    python3 "$repo_root/scripts/release_policy.py" is-wip "$1"
 }
 
 assert_no_tracked_wip_snapshots() {
@@ -167,10 +158,7 @@ trap cleanup EXIT
 
 cd "$repo_root"
 
-if is_wip_snapshot_name "$version"; then
-    printf 'ERR: refusing to package WIP/dev snapshot version: %s\n' "$version" >&2
-    exit 1
-fi
+python3 "$repo_root/scripts/release_policy.py" assert-release "$version"
 
 assert_no_tracked_wip_snapshots
 
@@ -185,9 +173,10 @@ if git grep -n "__PLUGIN_VERSION__" -- "$plugin_dir"; then
 fi
 
 assert_release_notes "$version"
-package_inputs=(README.md scripts/package-release scripts/validate-release-manifest "release-notes/$version.md" "$plugin_dir")
+package_inputs=(README.md scripts/package-release scripts/release_manifest.py scripts/release_policy.py scripts/release_snapshot_policy.py scripts/validate-release-manifest "release-notes/$version.md" "$plugin_dir")
 assert_package_inputs_clean "${package_inputs[@]}"
 assert_no_tracked_python_bytecode "$plugin_dir"
+assert_release_snapshot_policy "$plugin_dir"
 assert_release_manifest "$plugin_dir" "$version" "$plugin_dir" 1
 package_commit="$(git rev-parse --short=12 HEAD)"
 printf 'Packaging tracked release files from commit %s\n' "$package_commit"
@@ -201,6 +190,7 @@ mkdir -p "$staging/$package_dir"
 git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
 
 assert_no_python_bytecode "$staging/$package_dir"
+assert_release_snapshot_policy "$staging/$package_dir/$plugin_dir"
 assert_release_manifest "$staging/$package_dir/$plugin_dir" "$version" "$plugin_dir" 0
 check_plugin_python "$staging/$package_dir/$plugin_dir"
 assert_no_python_bytecode "$staging/$package_dir"
