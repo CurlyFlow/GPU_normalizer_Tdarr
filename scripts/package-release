@@ -82,6 +82,11 @@ assert_release_snapshot_policy() {
     python3 scripts/release_snapshot_policy.py scan "$root"
 }
 
+assert_runtime_artifacts() {
+    local root=$1
+    python3 scripts/runtime_artifacts.py verify "$root"
+}
+
 assert_release_notes() {
     local version=$1
     local notes="release-notes/$version.md"
@@ -173,7 +178,7 @@ if git grep -n "__PLUGIN_VERSION__" -- "$plugin_dir"; then
 fi
 
 assert_release_notes "$version"
-package_inputs=(README.md scripts/package-release scripts/release_manifest.py scripts/release_policy.py scripts/release_snapshot_policy.py scripts/validate-release-manifest "release-notes/$version.md" "$plugin_dir")
+package_inputs=(README.md scripts/package-release scripts/release_manifest.py scripts/release_policy.py scripts/release_snapshot_policy.py scripts/runtime_artifacts.py scripts/validate-release-manifest "release-notes/$version.md" "$plugin_dir")
 assert_package_inputs_clean "${package_inputs[@]}"
 assert_no_tracked_python_bytecode "$plugin_dir"
 assert_release_snapshot_policy "$plugin_dir"
@@ -185,6 +190,7 @@ mkdir -p "$out_dir"
 out_dir_abs="$(cd "$out_dir" && pwd)"
 
 check_plugin_python "$plugin_dir"
+assert_runtime_artifacts "$plugin_dir"
 
 mkdir -p "$staging/$package_dir"
 git archive --format=tar HEAD README.md "$plugin_dir" | tar -C "$staging/$package_dir" -xf -
