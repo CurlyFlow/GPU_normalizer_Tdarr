@@ -1,0 +1,13 @@
+{
+  "name": "gpu-normalize-audio-quality",
+  "private": true,
+  "scripts": {
+    "quality": "bash scripts/quality-check"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "^17.2.0",
+    "eslint": "^9.31.0",
+    "eslint-plugin-sonarjs": "^4.2.0",
+    "jscpd": "^4.0.8"
+  }
+}

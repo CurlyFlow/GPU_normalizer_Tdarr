@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -20,6 +22,7 @@ PTX_ARTIFACT = Path('runtime/cuda/loudnorm_source_port_kernels.ptx')
 PTX_COMPILER = Path('runtime/cuda/compile_cuda_ptx.py')
 NATIVE_SOURCE = Path('runtime/bin/opx_loudnorm_channel_stats.c')
 NATIVE_ARTIFACT = Path('runtime/bin/opx_loudnorm_channel_stats.so')
+ARTIFACT_LOCK = REPO_ROOT / 'work/locks/runtime-artifacts.lock'
 PTX_ENTRY_PATTERN = re.compile(r'(?m)^\s*(?:\.visible\s+)?\.entry\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(')
 
 KERNEL_SYMBOL_PROBE = '''
@@ -87,6 +90,27 @@ def temp_path_for(target: Path) -> Path:
     fd, raw_path = tempfile.mkstemp(prefix=f'.{target.name}.', dir=target.parent)
     os.close(fd)
     return Path(raw_path)
+
+
+@contextmanager
+def artifact_lock():
+    ARTIFACT_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with ARTIFACT_LOCK.open('a+', encoding='utf-8') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
+
+
+def clean_stale(plugin_root: Path) -> None:
+    removed = []
+    for relative in (PTX_ARTIFACT, NATIVE_ARTIFACT):
+        target = plugin_root / relative
+        for path in sorted(target.parent.glob(f'.{target.name}.*')):
+            if path.is_file():
+                path.unlink()
+                removed.append(path.relative_to(plugin_root).as_posix())
+    print(f'OK: stale runtime artifact cleanup removed={len(removed)}')
+    for path in removed:
+        print(f'REMOVED: {path}')
 
 
 def build_ptx(plugin_root: Path, output: Path) -> None:
@@ -268,16 +292,19 @@ def verify(plugin_root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Build or verify deterministic gpuNormalizeAudio runtime artifacts.')
-    parser.add_argument('command', choices=('build', 'verify'))
+    parser.add_argument('command', choices=('build', 'verify', 'clean-stale'))
     parser.add_argument('plugin_root', type=Path)
     args = parser.parse_args()
     plugin_root = args.plugin_root.resolve()
     if not plugin_root.is_dir():
         fail(f'plugin root is not a directory: {plugin_root}')
-    if args.command == 'build':
-        build(plugin_root)
-    else:
-        verify(plugin_root)
+    with artifact_lock():
+        if args.command == 'build':
+            build(plugin_root)
+        elif args.command == 'verify':
+            verify(plugin_root)
+        else:
+            clean_stale(plugin_root)
 
 
 if __name__ == '__main__':

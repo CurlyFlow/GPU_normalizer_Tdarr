@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+mapfile -t release_roots < <(printf '%s\n' FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/* | sort -V)
+if [[ ${#release_roots[@]} -eq 0 || ! -d "${release_roots[-1]}" ]]; then
+  printf 'No tracked GPU Normalize Audio release snapshot found.\n' >&2
+  exit 1
+fi
+
+targets=("${release_roots[-1]}")
+if [[ ${QUALITY_SKIP_LOCAL_SOURCE:-0} != 1 && -d src/gpuNormalizeAudio ]]; then
+  targets+=(src/gpuNormalizeAudio)
+fi
+
+printf 'quality: lint\n'
+npx eslint "${targets[@]}" scripts/quality-contracts.test.js
+
+printf 'quality: source structure\n'
+SOURCE_QUALITY_MAX_LINES=1500 SOURCE_QUALITY_MAX_COMPLEXITY=150 python3 scripts/source-quality.py "${targets[0]}"
+if [[ ${#targets[@]} -gt 1 ]]; then
+  python3 scripts/source-quality.py "${targets[1]}" scripts
+else
+  python3 scripts/source-quality.py scripts
+fi
+if [[ -d work/tdarr.d ]]; then
+  python3 scripts/source-quality.py work/tdarr.d
+fi
+
+printf 'quality: architecture\n'
+for target in "${targets[@]}"; do
+  npx depcruise "$target" --config .dependency-cruiser.cjs --output-type err
+done
+
+printf 'quality: duplication\n'
+for target in "${targets[@]}"; do
+  npx jscpd "$target" --no-gitignore --format javascript --min-lines 10 --min-tokens 80 --threshold 0 --ignore '**/runtime/**,**/FlowHelpers/**' --noTips
+  npx jscpd "$target/runtime" --no-gitignore --format python,c,bash --min-lines 30 --min-tokens 250 --threshold 0 --ignore '**/*.ptx,**/*.so' --noTips
+  npx jscpd "$target/runtime/cuda" --no-gitignore --min-lines 180 --min-tokens 2500 --threshold 0 --ignore '**/*.ptx' --formats-exts 'cpp:cu,cuh' --noTips
+done
+npx jscpd scripts --no-gitignore --format python,bash --min-lines 20 --min-tokens 150 --threshold 0 --noTips
+if [[ -d work/tdarr.d ]]; then
+  npx jscpd work/tdarr.d --no-gitignore --format python,bash --min-lines 20 --min-tokens 150 --threshold 0 --noTips
+fi
+
+printf 'quality: shell syntax\n'
+shell_files=(scripts/quality-check scripts/package-release)
+[[ -f work/tdarr ]] && shell_files+=(work/tdarr)
+for shell_file in work/tdarr.d/*.sh; do
+  [[ -f "$shell_file" ]] && shell_files+=("$shell_file")
+done
+bash -n "${shell_files[@]}"
+
+if [[ -f src/gpuNormalizeAudio/runtime/bin/cuda_abi_validation.py ]]; then
+  printf 'quality: CUDA ABI ownership\n'
+  python3 src/gpuNormalizeAudio/runtime/bin/cuda_abi_validation.py
+fi
+
+printf 'quality: ownership contracts\n'
+node --test scripts/quality-contracts.test.js
