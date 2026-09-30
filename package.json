@@ -6,6 +6,7 @@
   },
   "devDependencies": {
     "dependency-cruiser": "^17.2.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.31.0",
     "eslint-plugin-sonarjs": "^4.2.0",
     "jscpd": "^4.0.8"

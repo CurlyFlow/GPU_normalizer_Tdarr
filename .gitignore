@@ -16,6 +16,7 @@ node_modules/
 AGENTS.md
 docs/
 .agents/
+tools/
 
 # Local editable source template; release snapshots are tracked per version
 src/

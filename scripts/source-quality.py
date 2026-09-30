@@ -9,7 +9,7 @@ import sys
 
 MAX_LINES = int(os.environ.get('SOURCE_QUALITY_MAX_LINES', '1000'))
 MAX_COMPLEXITY = int(os.environ.get('SOURCE_QUALITY_MAX_COMPLEXITY', '50'))
-TEXT_SUFFIXES = {'.c', '.cu', '.cuh', '.js', '.py', '.sh'}
+TEXT_SUFFIXES = {'.c', '.cu', '.cuh', '.js', '.mjs', '.cjs', '.py', '.sh'}
 
 
 def python_complexity(node: ast.AST) -> int:
@@ -54,12 +54,13 @@ def local_imports(tree: ast.AST) -> set[str]:
 def check_root(root: Path) -> list[str]:
     findings = []
     python_trees = {}
-    for path in sorted(item for item in root.rglob('*') if item.is_file() and item.suffix in TEXT_SUFFIXES):
+    candidates = [root] if root.is_file() else root.rglob('*')
+    for path in sorted(item for item in candidates if item.is_file() and item.suffix in TEXT_SUFFIXES):
         try:
             text = path.read_text(encoding='utf-8')
         except UnicodeDecodeError:
             continue
-        lines = text.count('\n') + bool(text)
+        lines = text.count('\n') + bool(text and not text.endswith('\n'))
         if lines > MAX_LINES:
             findings.append(f'{path}: {lines} lines exceeds {MAX_LINES}')
         if path.suffix != '.py':
@@ -76,7 +77,8 @@ def check_root(root: Path) -> list[str]:
                 if complexity > MAX_COMPLEXITY:
                     findings.append(f'{path}:{node.lineno}: {node.name} complexity {complexity} exceeds {MAX_COMPLEXITY}')
 
-    modules = {python_module_name(root, path): path for path in python_trees}
+    module_root = root.parent if root.is_file() else root
+    modules = {python_module_name(module_root, path): path for path in python_trees}
     graph = {
         module: {name for name in local_imports(python_trees[path]) if name in modules}
         for module, path in modules.items()
@@ -103,9 +105,12 @@ def check_root(root: Path) -> list[str]:
 
 
 def main() -> int:
-    roots = [Path(arg) for arg in sys.argv[1:] if Path(arg).is_dir()]
+    roots = [Path(arg) for arg in sys.argv[1:]]
     if not roots:
         print('source-quality: no source roots', file=sys.stderr)
+        return 1
+    if any(not (root.is_dir() or root.is_file()) for root in roots):
+        print('source-quality: missing source input', file=sys.stderr)
         return 1
     findings = []
     for root in roots:

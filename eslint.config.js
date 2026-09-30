@@ -35,7 +35,10 @@ module.exports = [
       globals: {
         __dirname: "readonly",
         Buffer: "readonly",
+        clearInterval: "readonly",
+        clearTimeout: "readonly",
         console: "readonly",
+        exports: "readonly",
         module: "readonly",
         process: "readonly",
         require: "readonly",
@@ -48,9 +51,25 @@ module.exports = [
       sonarjs,
     },
     rules: {
+      "no-undef": "error",
       "max-lines": ["error", { "max": 1000, "skipBlankLines": true, "skipComments": true }],
       "sonarjs/cognitive-complexity": ["error", 45],
       "sonarjs/no-identical-functions": "error",
+    },
+  },
+  {
+    files: ["work/compare/**/*.js", "work/cpu_gpu_compare.js", "work/compare-self-test.js"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "commonjs",
+      globals: {
+        __dirname: "readonly", Buffer: "readonly", console: "readonly", module: "readonly",
+        process: "readonly", require: "readonly", setInterval: "readonly", setTimeout: "readonly",
+      },
+    },
+    rules: {
+      "max-lines": ["error", { "max": 1000, "skipBlankLines": true, "skipComments": true }],
+      "no-undef": "error",
     },
   },
 ];

@@ -75,8 +75,7 @@ def list_source(source_root: str, source_prefix: str) -> None:
 
 
 def _scan_text(rel: str, data: bytes) -> list[str]:
-    if b'\0' in data:
-        return []
+    # Native artifacts can contain embedded build paths or credentials too.
     text = data.decode('utf-8', errors='replace')
     findings = []
     for pattern in PRIVATE_TERM_PATTERNS:

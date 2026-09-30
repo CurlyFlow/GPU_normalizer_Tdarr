@@ -4,11 +4,52 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const { spawnSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const sourceRoot = process.env.QUALITY_SKIP_LOCAL_SOURCE === "1"
   ? path.join(repoRoot, ".quality-source-not-present")
   : path.join(repoRoot, "src/gpuNormalizeAudio");
+
+test("private source, operators, media evidence and docs stay outside public Git", () => {
+  const paths = ["src/private-fixture.js", "tools/private-fixture.mjs", "docs/private-fixture.md",
+    "work/private-media-fixture.mkv", "work/rollout/private-fixture.json", ".agents/private-fixture.json"];
+  const result = spawnSync("git", ["check-ignore", "--", ...paths],
+    { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split("\n"), paths);
+});
+
+test("release privacy scan does not skip binary artifacts", () => {
+  const temporary = fs.mkdtempSync(path.join(repoRoot, "work/privacy-contract-"));
+  try {
+    const artifact = path.join(temporary, "fixture.so");
+    fs.writeFileSync(artifact, Buffer.from("\0password=fixture-not-a-secret\0"));
+    const result = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary],
+      { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /private-term scan failed/);
+    fs.writeFileSync(artifact, Buffer.from("\0ordinary native payload\0"));
+    const clean = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary],
+      { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+    assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("source lint rejects unresolved context fields and permits real Node globals", () => {
+  const eslint = path.join(repoRoot, "node_modules/eslint/bin/eslint.js");
+  for (const [input, expected] of [
+    ["module.exports = missingProcessingContext;", 1],
+    ["module.exports = () => clearTimeout(setTimeout(() => {}, 1));", 0],
+  ]) {
+    const result = spawnSync(process.execPath, [eslint, "--stdin", "--stdin-filename", "src/gpuNormalizeAudio/lib/lintFixture.js"],
+      { cwd: repoRoot, input, encoding: "utf8", timeout: 10000 });
+    assert.equal(result.status, expected, result.stdout + result.stderr);
+    if (expected) assert.match(result.stdout, /no-undef/);
+  }
+});
 
 function filesBelow(root, extension) {
   if (!fs.existsSync(root)) return [];
@@ -71,7 +112,7 @@ test("local paired apply, feedback, and config boundaries stay structured", { sk
   assert.match(feedback, /class FeedbackLaunchPlan:/);
   assert.match(feedback, /class FeedbackApplyMode\(Enum\):/);
   assert.doesNotMatch(runtimeConfig, /setattr\(self,/);
-  assert.match(runtimeConfig, /def __getattr__\(self, name\):/);
+  assert.doesNotMatch(runtimeConfig, /def __getattr__\(/);
 });
 
 test("installed Python runtime does not create updater-blocking bytecode", { skip: !fs.existsSync(sourceRoot) }, () => {
@@ -80,4 +121,59 @@ test("installed Python runtime does not create updater-blocking bytecode", { ski
   const firstLocalImport = entrypoint.indexOf("from cuda_buffers import");
   assert.ok(disableBytecode >= 0);
   assert.ok(firstLocalImport > disableBytecode);
+});
+
+test("dependency owner rules reject reverse imports but allow shared policy", { skip: !fs.existsSync(sourceRoot) }, () => {
+  const root = fs.mkdtempSync(path.join(repoRoot, "work/ownership-contract-"));
+  const lib = path.join(root, "src/gpuNormalizeAudio/lib");
+  fs.mkdirSync(lib, { recursive: true });
+  const cases = [
+    ["outputMux", "pluginProcessingContext", "output-data-and-command-policy-stay-below-orchestration"],
+    ["splitStatsCoordinator", "pairedApplyCoordinator", "stats-does-not-own-processing-or-publication"],
+    ["pairedApplyCoordinator", "cpuLoudnormScheduler", "paired-apply-does-not-own-stats-scheduling"],
+    ["pairedApplyMeasurement", "cpuLoudnormTelemetry", null],
+    ["pairedApplySplitStats", "splitStatsPolicy", null],
+  ];
+  try {
+    for (const [owner, dependency, violation] of cases) {
+      const ownerPath = path.join(lib, `${owner}.js`);
+      const dependencyPath = path.join(lib, `${dependency}.js`);
+      fs.writeFileSync(ownerPath, `module.exports = require("./${dependency}");\n`);
+      fs.writeFileSync(dependencyPath, "module.exports = {};\n");
+      const result = spawnSync(process.execPath, [
+        path.join(repoRoot, "node_modules/dependency-cruiser/bin/dependency-cruise.mjs"),
+        "src/gpuNormalizeAudio/lib", "--config", path.join(repoRoot, ".dependency-cruiser.cjs"),
+        "--output-type", "err",
+      ], { cwd: root, encoding: "utf8", timeout: 15000 });
+      assert.equal(result.error, undefined);
+      assert.equal(result.status, violation ? 1 : 0, `${result.stdout}\n${result.stderr}`);
+      if (violation) assert.match(`${result.stdout}\n${result.stderr}`, new RegExp(violation));
+      fs.unlinkSync(ownerPath);
+      fs.unlinkSync(dependencyPath);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("source size gate checks explicit files and rejects missing inputs", { skip: !fs.existsSync(sourceRoot) }, () => {
+  const root = fs.mkdtempSync(path.join(repoRoot, "work/source-size-contract-"));
+  const file = path.join(root, "fixture.mjs");
+  const run = (...inputs) => spawnSync("python3", [path.join(repoRoot, "scripts/source-quality.py"), ...inputs], {
+    cwd: repoRoot, encoding: "utf8", timeout: 15000,
+    env: { ...process.env, SOURCE_QUALITY_MAX_LINES: "1000" },
+  });
+  try {
+    fs.writeFileSync(file, "export const value = 1;\n");
+    assert.equal(run(file).status, 0);
+    assert.equal(run(file, path.join(root, "missing.js")).status, 1);
+    fs.writeFileSync(file, "// fixture\n".repeat(1000));
+    assert.equal(run(file).status, 0);
+    fs.writeFileSync(file, "// fixture\n".repeat(1001));
+    const oversized = run(file);
+    assert.equal(oversized.status, 1);
+    assert.match(oversized.stderr, /exceeds 1000/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
