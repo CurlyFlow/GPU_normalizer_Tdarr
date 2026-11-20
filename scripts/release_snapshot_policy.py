@@ -29,6 +29,7 @@ IGNORED_SUFFIXES = ('.pyc', '.pyo')
 IGNORED_DIRS = {'__pycache__'}
 
 FORBIDDEN_GIT_PREFIXES = (
+    'private/',
     'docs/',
     'work/',
     '.agents/',

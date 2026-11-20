@@ -12,7 +12,7 @@ const sourceRoot = process.env.QUALITY_SKIP_LOCAL_SOURCE === "1"
   : path.join(repoRoot, "src/gpuNormalizeAudio");
 
 test("private operators, media evidence and docs stay outside public Git", () => {
-  const paths = ["tools/private-fixture.mjs", "docs/private-fixture.md",
+  const paths = ["private/mediaPipelineHelper/fixture.js", "tools/private-fixture.mjs", "docs/private-fixture.md",
     "work/private-media-fixture.mkv", "work/rollout/private-fixture.json", ".agents/private-fixture.json"];
   const result = spawnSync("git", ["check-ignore", "--", ...paths],
     { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
@@ -33,6 +33,31 @@ test("release privacy scan does not skip binary artifacts", () => {
     const clean = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary],
       { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
     assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("release privacy scan blocks full release names and redacts local env terms", () => {
+  const temporary = fs.mkdtempSync(path.join(repoRoot, "work/privacy-env-contract-"));
+  const scanDir = path.join(temporary, "payload");
+  const envFile = path.join(temporary, ".env.fixture");
+  const payload = path.join(scanDir, "sample.txt");
+  const runScan = (env) => spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", scanDir],
+    { cwd: repoRoot, encoding: "utf8", timeout: 10000, env });
+  try {
+    fs.mkdirSync(scanDir, { recursive: true });
+    fs.writeFileSync(envFile, "PRIVACY_EXTRA_TERMS=secretLocalHostFixture\n");
+    const env = { ...process.env, PRIVACY_ENV_FILE: envFile, PRIVACY_EXTRA_TERMS: "" };
+    fs.writeFileSync(payload, "Generic 2160p WEBRip and S01E02 notes are fine.\n");
+    assert.equal(runScan(env).status, 0);
+    fs.writeFileSync(payload, "Example.Title.2160p.WEBRip.H265-RLSGROUP\n");
+    assert.equal(runScan(env).status, 1);
+    fs.writeFileSync(payload, "connecting to secretLocalHostFixture\n");
+    const envHit = runScan(env);
+    assert.equal(envHit.status, 1);
+    assert.doesNotMatch(envHit.stderr, /secretLocalHostFixture/);
+    assert.match(envHit.stderr, /local-env-term \(redacted\)/);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }

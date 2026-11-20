@@ -15,6 +15,7 @@ node_modules/
 # Internal handoff/reference notes stay local
 AGENTS.md
 .ignore
+private/
 docs/
 .agents/
 tools/
