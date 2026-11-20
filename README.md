@@ -154,7 +154,7 @@ Active source code lives in [`src/gpuNormalizeAudio/`](src/gpuNormalizeAudio/), 
 - **Streaming GPU Runtime (Python / C):** [`src/gpuNormalizeAudio/runtime/bin/`](src/gpuNormalizeAudio/runtime/bin/) — streaming FFmpeg decode/encode orchestration, two-pass `loudnorm` measurement and apply scheduling, and native C helpers (`audio_clock_mux`, `loudnorm_first_pass_native`).
 - **CUDA Loudnorm Kernels (CUDA C/C++):** [`src/gpuNormalizeAudio/runtime/cuda/`](src/gpuNormalizeAudio/runtime/cuda/) — GPU kernels porting FFmpeg `af_loudnorm.c` EBU R128 loudness measurement, true-peak detection, dynamic gain planning, and limiter feedback.
 - **Parity Diagnostics:** [`diagnostics/`](diagnostics/) — standalone C and Node.js tools (`first_diff_f32.c`, `analyze_f32_diff.js`) for sample-accurate `f32le` PCM comparison against CPU `Normalize Audio`.
-- **Quality & Privacy Gates:** [`scripts/`](scripts/) and [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — dependency-cycle checks, contract tests, release manifest validation, and automated privacy scanning.
+- **Quality & Privacy Gates:** [`scripts/`](scripts/) — dependency-cycle checks, contract tests, release manifest validation, and local privacy scanning.
 
 ## Versions
 
