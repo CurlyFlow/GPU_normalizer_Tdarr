@@ -14,12 +14,15 @@ node_modules/
 
 # Internal handoff/reference notes stay local
 AGENTS.md
+.ignore
 docs/
 .agents/
 tools/
 
-# Local editable source template; release snapshots are tracked per version
-src/
+# Compiled native/CUDA artifacts under src/ stay local; release snapshots include built artifacts
+src/**/*.so
+src/**/*.ptx
+src/**/audio_clock_mux
 
 # Generated logs and scratch output
 *.log

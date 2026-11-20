@@ -146,6 +146,16 @@ Choose `1.2.8` for current parity, the fastest validated long combined jobs, the
 
 For `1.2.3`, the exact-stats workers run as an overlapped pair. The history row lists the slower worker time, not the sum of both overlapped worker counters.
 
+## Architecture & Codebase
+
+Active source code lives in [`src/gpuNormalizeAudio/`](src/gpuNormalizeAudio/), with immutable release snapshots under [`FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/`](FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/1.2.8/):
+
+- **Tdarr FlowPlugin & Audio Planner (JavaScript):** [`src/gpuNormalizeAudio/index.js`](src/gpuNormalizeAudio/index.js) and [`src/gpuNormalizeAudio/lib/`](src/gpuNormalizeAudio/lib/) — stream selection, language ordering, generated stereo fallback planning, GPU lock coordination, paired apply orchestration, and final muxing.
+- **Streaming GPU Runtime (Python / C):** [`src/gpuNormalizeAudio/runtime/bin/`](src/gpuNormalizeAudio/runtime/bin/) — streaming FFmpeg decode/encode orchestration, two-pass `loudnorm` measurement and apply scheduling, and native C helpers (`audio_clock_mux`, `loudnorm_first_pass_native`).
+- **CUDA Loudnorm Kernels (CUDA C/C++):** [`src/gpuNormalizeAudio/runtime/cuda/`](src/gpuNormalizeAudio/runtime/cuda/) — GPU kernels porting FFmpeg `af_loudnorm.c` EBU R128 loudness measurement, true-peak detection, dynamic gain planning, and limiter feedback.
+- **Parity Diagnostics:** [`diagnostics/`](diagnostics/) — standalone C and Node.js tools (`first_diff_f32.c`, `analyze_f32_diff.js`) for sample-accurate `f32le` PCM comparison against CPU `Normalize Audio`.
+- **Quality & Privacy Gates:** [`scripts/`](scripts/) and [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — dependency-cycle checks, contract tests, release manifest validation, and automated privacy scanning.
+
 ## Versions
 
 | Version | Use |

@@ -1,0 +1,8 @@
+#include "loudnorm_stats_window_baseline_kernels.cuh"
+#include "loudnorm_stats_window_start_state_kernels.cuh"
+#include "loudnorm_stats_window_channel_checkpoint_kernels.cuh"
+#include "loudnorm_stats_window_channel_sums_kernels.cuh"
+#include "loudnorm_stats_window_channel_unroll4_kernels.cuh"
+#include "loudnorm_stats_window_channel_warp_kernels.cuh"
+#include "loudnorm_stats_window_channel_no_peaks_kernels.cuh"
+#include "loudnorm_stats_window_channel_source_kernels.cuh"

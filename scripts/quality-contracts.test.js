@@ -11,8 +11,8 @@ const sourceRoot = process.env.QUALITY_SKIP_LOCAL_SOURCE === "1"
   ? path.join(repoRoot, ".quality-source-not-present")
   : path.join(repoRoot, "src/gpuNormalizeAudio");
 
-test("private source, operators, media evidence and docs stay outside public Git", () => {
-  const paths = ["src/private-fixture.js", "tools/private-fixture.mjs", "docs/private-fixture.md",
+test("private operators, media evidence and docs stay outside public Git", () => {
+  const paths = ["tools/private-fixture.mjs", "docs/private-fixture.md",
     "work/private-media-fixture.mkv", "work/rollout/private-fixture.json", ".agents/private-fixture.json"];
   const result = spawnSync("git", ["check-ignore", "--", ...paths],
     { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
