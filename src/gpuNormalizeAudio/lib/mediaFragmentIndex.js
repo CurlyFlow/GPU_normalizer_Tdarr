@@ -72,7 +72,8 @@ function inspectFragmentIndex(file) {
         presentationEnd: String(track.last.pts + track.last.duration + track.presentationShift),
         maxPresentationEnd: String(track.maxEnd + track.presentationShift),
         declaredEnd: declaredPresentationEnd(track, track.maxEnd + track.presentationShift),
-        fragments: track.fragments, seekableFragments: track.seekableFragments, indexed: track.indexed, durationRuns: track.durationRuns })) };
+        fragments: track.fragments, seekableFragments: track.seekableFragments, indexed: track.indexed,
+        ...(track.kind === "soun" ? { durationRuns: track.durationRuns } : {}) })) };
   });
 }
 

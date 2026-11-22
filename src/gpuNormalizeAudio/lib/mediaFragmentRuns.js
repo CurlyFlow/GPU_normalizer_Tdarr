@@ -48,11 +48,13 @@ function fragmentHeader(reader, moof, trafIndex, box, tracks) {
 }
 
 function recordSample(track, targets, coordinate, row, flags, fragmentStart) {
-  const runs = track.durationRuns ||= [], previous = runs.at(-1);
-  if (previous?.duration === String(row.duration)) previous.count = String(BigInt(previous.count) + 1n);
-  else {
-    assert.ok(runs.length < 100000, "Excessive sample duration runs");
-    runs.push({ count: "1", duration: String(row.duration) });
+  if (track.kind === "soun") {
+    const runs = track.durationRuns ||= [], previous = runs.at(-1);
+    if (previous?.duration === String(row.duration)) previous.count = String(BigInt(previous.count) + 1n);
+    else {
+      assert.ok(runs.length < 100000, "Excessive sample duration runs");
+      runs.push({ count: "1", duration: String(row.duration) });
+    }
   }
   if (fragmentStart && !(flags & 0x10000n)) track.seekableFragments++;
   const target = targets.get(coordinate);
