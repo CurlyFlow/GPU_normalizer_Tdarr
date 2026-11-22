@@ -6,6 +6,7 @@ const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { readEvidenceLines } = require("./mediaEvidenceFiles");
 const { decodedAudioTimeline } = require("./mediaClockEvidence");
+const { unexpectedMediaDiagnostics } = require("./mediaSourceProbe");
 
 const STREAM_FIELDS = ["index", "codec_type", "sample_rate", "channels", "time_base"];
 const FRAME_FIELDS = ["media_type", "stream_index", "pts", "nb_samples", "channels"];
@@ -121,8 +122,9 @@ function probeAudioTimeline(file, index, stream, ffprobePath, directory, overrid
       result = spawnSync(ffprobePath, audioProbeArgs(file, index),
         { stdio: ["ignore", fd, "pipe"], encoding: "utf8", timeout: 900000, maxBuffer: 1024 * 1024 });
     } finally { fs.closeSync(fd); }
-    if (result.error || result.status !== 0 || result.stderr?.trim()) {
-      throw Error(`Complete native audio frame inspection failed: ${result.error?.message || result.stderr?.slice(-4000) || result.status}`);
+    const unexpected = unexpectedMediaDiagnostics(result.stderr);
+    if (result.error || result.status !== 0 || unexpected) {
+      throw Error(`Complete native audio frame inspection failed: ${result.error?.message || unexpected.slice(-4000) || result.status}`);
     }
     const timeline = parseAudioTimelineFile(output, stream, overrideTick);
     evidenceCache?.timelines?.set(key, timeline);
@@ -179,8 +181,9 @@ function probeAudioTimelineAsync(file, index, stream, ffprobePath, directory, ov
     child.on("error", error => finish(Error(`Complete native audio frame inspection failed: ${error.message}`)));
     child.on("close", (code, signal) => {
       closeFd();
-      if (signal || code !== 0 || stderr.trim()) {
-        return finish(Error(`Complete native audio frame inspection failed: ${stderr.slice(-4000) || signal || code}`));
+      const unexpected = unexpectedMediaDiagnostics(stderr);
+      if (signal || code !== 0 || unexpected) {
+        return finish(Error(`Complete native audio frame inspection failed: ${unexpected.slice(-4000) || signal || code}`));
       }
       try {
         const timeline = parseAudioTimelineFile(output, stream, overrideTick);

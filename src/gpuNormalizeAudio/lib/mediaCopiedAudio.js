@@ -4,6 +4,7 @@ const { spawn } = require("node:child_process");
 const { nativePcmFormat, PcmFingerprint } = require("./mediaPcmEvidence");
 const { framehash } = require("./mediaFrameEvidence");
 const { comparePacketPayloads } = require("./mediaClockEvidence");
+const { unexpectedMediaDiagnostics } = require("./mediaSourceProbe");
 
 function decodedFingerprint(executable, file, index, format, channels) {
   return new Promise((resolve, reject) => {
@@ -14,7 +15,7 @@ function decodedFingerprint(executable, file, index, format, channels) {
       // Raw PCM sink proves decoded sample values without muxer timestamp state
       // so mid-stream broadcast channel switches cannot reset filtergraph PTS.
       "-c:a", `pcm_${format}`, "-f", format, "pipe:1"], { stdio: ["ignore", "pipe", "pipe"] });
-    let failure = null, escalation;
+    let failure = null, escalation, stderr = "";
     const stop = message => {
       if (failure) return;
       failure = Error(message);
@@ -26,10 +27,14 @@ function decodedFingerprint(executable, file, index, format, channels) {
       if (failure) return;
       try { fingerprint.update(chunk); } catch (error) { stop(error.message); }
     });
-    child.stderr.on("data", () => stop("Copied audio decoder emitted diagnostics"));
+    child.stderr.on("data", chunk => {
+      if (stderr.length < 16384) stderr += chunk.toString("utf8");
+      if (stderr.includes("\n") && unexpectedMediaDiagnostics(stderr)) stop("Copied audio decoder emitted diagnostics");
+    });
     child.on("error", () => stop("Copied audio decoder could not start"));
     child.on("close", (code, signal) => {
       clearTimeout(deadline); clearTimeout(escalation);
+      if (!failure && unexpectedMediaDiagnostics(stderr)) failure = Error("Copied audio decoder emitted diagnostics");
       if (failure || signal || code !== 0) return reject(failure || Error("Copied audio decode incomplete"));
       const result = fingerprint.finish();
       if (!result.aligned || !result.finite || result.samples === 0) return reject(Error("Copied audio samples are empty, non-finite or unaligned"));

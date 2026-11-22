@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 const { readEvidenceLines } = require("./mediaEvidenceFiles");
+const { unexpectedMediaDiagnostics } = require("./mediaSourceProbe");
 
 function framehashArgs(file, selector, codec, evidence, nativeVideo = null) {
   const video = nativeVideo ? ["-threads", "1", "-fps_mode", "passthrough", "-pix_fmt", nativeVideo.pix_fmt,
@@ -43,8 +44,9 @@ function framehashToFileAsync(file, selector, codec, ffmpegPath, evidence, nativ
     });
     child.on("error", err => finish(new Error(`Complete packet/frame evidence failed: ${String(err).slice(-1000)}`)));
     child.on("close", (code, signal) => {
-      if (signal || code !== 0 || stderr.trim()) {
-        return finish(new Error(`Complete packet/frame evidence failed: ${String(stderr || signal || "missing exit").slice(-1000)}`));
+      const unexpected = unexpectedMediaDiagnostics(stderr);
+      if (signal || code !== 0 || unexpected) {
+        return finish(new Error(`Complete packet/frame evidence failed: ${String(unexpected || signal || "missing exit").slice(-1000)}`));
       }
       return finish(null);
     });
@@ -64,9 +66,10 @@ function* framehash(file, selector, codec, ffmpegPath, directory, nativeVideo = 
       const evidence = path.join(evidenceCache.directory, `packets-${++evidenceCache.nextId}.framehash`);
       const result = spawnSync(ffmpegPath, framehashArgs(file, selector, codec, evidence, null),
         { encoding: "utf8", timeout: 900000, maxBuffer: 1024 * 1024 });
-      if (result.error || result.status !== 0 || result.stderr?.trim()) {
+      const unexpected = unexpectedMediaDiagnostics(result.stderr);
+      if (result.error || result.status !== 0 || unexpected) {
         try { fs.rmSync(evidence, { force: true }); } catch {}
-        throw new Error(`Complete packet/frame evidence failed: ${String(result.stderr || result.error || "missing exit").slice(-1000)}`);
+        throw new Error(`Complete packet/frame evidence failed: ${String(unexpected || result.error || "missing exit").slice(-1000)}`);
       }
       evidenceCache.framehashes.set(key, evidence);
       yield* readEvidenceLines(evidence);
@@ -78,8 +81,9 @@ function* framehash(file, selector, codec, ffmpegPath, directory, nativeVideo = 
     const evidence = path.join(owned, "packets.framehash");
     const result = spawnSync(ffmpegPath, framehashArgs(file, selector, codec, evidence, nativeVideo),
       { encoding: "utf8", timeout: 900000, maxBuffer: 1024 * 1024 });
-    if (result.error || result.status !== 0 || result.stderr?.trim()) {
-      throw new Error(`Complete packet/frame evidence failed: ${String(result.stderr || result.error || "missing exit").slice(-1000)}`);
+    const unexpected = unexpectedMediaDiagnostics(result.stderr);
+    if (result.error || result.status !== 0 || unexpected) {
+      throw new Error(`Complete packet/frame evidence failed: ${String(unexpected || result.error || "missing exit").slice(-1000)}`);
     }
     yield* readEvidenceLines(evidence);
   } finally {
