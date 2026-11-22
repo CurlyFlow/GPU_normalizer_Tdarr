@@ -130,6 +130,32 @@ function transformedVideoShift(source, output) {
   return videoShift(source, output, false);
 }
 
+// Fast packet-copy timeline verification for NVENC-transcoded video without
+// full software rawvideo decoding or a duplicate reference encode.
+function transformedPacketShift(source, output) {
+  try {
+    const before = packetEvidence(source), after = packetEvidence(output);
+    const collectPts = (evidence) => {
+      const pts = [];
+      for (const row of evidence.rows) pts.push(BigInt(row[2]));
+      pts.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      return pts;
+    };
+    const beforePts = collectPts(before), afterPts = collectPts(after);
+    assert.equal(afterPts.length, beforePts.length, 'Video packet count changed');
+    let offset = null;
+    for (let index = 0; index < beforePts.length; index++) {
+      const shift = subtract(packetTime(afterPts[index], after.base), packetTime(beforePts[index], before.base));
+      offset ??= shift;
+      assert.ok(sameTime(shift, offset), 'Video PTS drift');
+    }
+    return offset;
+  } finally {
+    source.return?.();
+    output.return?.();
+  }
+}
+
 function copiedVideoOffset(source, output) {
   const shift = copiedVideoShift(source.split('\n'), output.split('\n'));
   return Number(shift.numerator) / Number(shift.denominator);
@@ -258,5 +284,5 @@ function compareAudioTimeline(source, output, sourceSpec, outputSpec, offset) {
   }
 }
 
-module.exports = { copiedVideoShift, transformedVideoShift, copiedVideoOffset, compareAudioTimeline,
+module.exports = { copiedVideoShift, transformedVideoShift, transformedPacketShift, copiedVideoOffset, compareAudioTimeline,
   decodedAudioTimeline, compareAudioTimelines, comparePacketPayloads };
