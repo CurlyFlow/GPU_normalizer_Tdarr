@@ -6,7 +6,7 @@ const assert = require("node:assert/strict");
 const { fileDigest, sameFileGeneration, readRetainedReceipt, retainedReceipt, writePrivateReceipt } = require("./mediaEvidenceFiles");
 const { validateReceipt } = require("./mediaClockProtocol");
 const { CPU_PLUGIN_SHA256, validateValueReceipt } = require("./mediaAudioValueProtocol");
-const { createAudioSelectionIntent, audioValueMaps } = require("./audioValueSelection");
+const { createAudioSelectionIntent, approveAudioValueMaps, audioValueMaps } = require("./audioValueSelection");
 const { inspectStreams } = require("./mediaSourceProbe");
 const { decoderIdentity } = require("./mediaEvidenceTools");
 const { requireStageProducer } = require("./mediaStageProducer");
@@ -47,7 +47,7 @@ function bindAudioHandoff(args, temporary, output, { audioSpecs = null, outputCo
     const toolsRef = values || clock;
     assert.deepEqual(decoderIdentity(toolsRef.prober.executable), toolsRef.prober, "Selection prober generation changed");
     const streams = inspectStreams(source.file, (toolsRef.prober.native || toolsRef.prober).executable);
-    const maps = values ? values.request.maps : audioValueMaps(args, audioSpecs, outputContract);
+    const maps = values ? values.request.maps : approveAudioValueMaps(args, audioValueMaps(args, audioSpecs, outputContract), streams);
     const selection = createAudioSelectionIntent(args, maps, streams);
     assert.deepEqual(selection.maps, maps, "Audio values differ from configured selection");
     assert.equal(clock.audioMap.length, selection.maps.length, "Audio clocks differ from configured selection");

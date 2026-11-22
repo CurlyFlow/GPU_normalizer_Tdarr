@@ -7,7 +7,7 @@ const { mediaTools } = require("./mediaTools");
 const { inspectMedia, inspectStreams } = require("./mediaSourceProbe");
 const { decoderIdentity } = require("./mediaEvidenceTools");
 const { fileDigest, sameFileGeneration, readRetainedReceipt, retainedReceipt, writePrivateReceipt } = require("./mediaEvidenceFiles");
-const { createAudioSelectionIntent, audioValueMaps } = require("./audioValueSelection");
+const { createAudioSelectionIntent, approveAudioValueMaps, audioValueMaps } = require("./audioValueSelection");
 const { CPU_PLUGIN_SHA256, normalizesAudio, validateValueReceipt } = require("./mediaAudioValueProtocol");
 const { audioReferenceInputs } = require("./mediaAudioReference");
 const { requireStageProducer } = require("./mediaStageProducer");
@@ -227,9 +227,10 @@ function maybeRetainNormalizedEofContext(args, { valueBasis = null, audioSpecs =
   const candidateMedia = inspectMedia(candidateFile, ffprobeExec);
   if (!String(candidateMedia.format?.format_name || "").split(",").includes("mov")) return null;
   const sourceFile = args.inputFileObj._id;
-  const sourceAudio = inspectStreams(sourceFile, ffprobeExec).filter(stream => stream.type === "audio");
+  const sourceStreams = inspectStreams(sourceFile, ffprobeExec);
+  const sourceAudio = sourceStreams.filter(stream => stream.type === "audio");
   const candidateAudio = candidateMedia.streams.filter(stream => stream.codec_type === "audio");
-  const maps = basis ? basis.request.maps : audioValueMaps(args, audioSpecs, outputContract);
+  const maps = basis ? basis.request.maps : approveAudioValueMaps(args, audioValueMaps(args, audioSpecs, outputContract), sourceStreams);
   const normalizedEntries = maps
     .map((map, index) => ({ map, result: basis ? basis.results[index] : null }))
     .filter(({ map, result }) => (basis ? isGenuinelyNormalized(map, result) : normalizesAudio(map)));
