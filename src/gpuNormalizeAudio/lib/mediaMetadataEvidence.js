@@ -67,6 +67,10 @@ function verifyStreamMetadata(source, candidate, transformed = false, options = 
   // FFmpeg represents an unspecified language either as absent or `und`.
   before.language ||= "und";
   after.language ||= "und";
+  // ISO MP4 (`movenc.c`) cannot carry Matroska per-stream `title` tags in `.mp4` mode.
+  if (options.containerPromotion && before.title !== undefined && after.title === undefined) {
+    delete before.title;
+  }
   assert.deepEqual(after, before, "Retained stream metadata changed");
   verifyDisposition(source, candidate, Boolean(options.containerPromotion));
 }
