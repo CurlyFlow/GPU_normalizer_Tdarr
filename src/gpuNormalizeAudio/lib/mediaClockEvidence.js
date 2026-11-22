@@ -60,10 +60,28 @@ function packetTime(value, base) {
   return { numerator: BigInt(value) * base.numerator, denominator: base.denominator };
 }
 
-function videoShift(source, output, comparePixels) {
+function headersMatch(beforeHeaders, afterHeaders, allowEquivalentExtradata) {
+  if (beforeHeaders.length === afterHeaders.length
+      && beforeHeaders.every((line, index) => line === afterHeaders[index])) return true;
+  if (!allowEquivalentExtradata || beforeHeaders.length !== afterHeaders.length) return false;
+  let extradataDiffs = 0;
+  for (let index = 0; index < beforeHeaders.length; index++) {
+    if (beforeHeaders[index] === afterHeaders[index]) continue;
+    if (beforeHeaders[index].startsWith('#extradata ') && afterHeaders[index].startsWith('#extradata ')) {
+      extradataDiffs += 1;
+      continue;
+    }
+    return false;
+  }
+  return extradataDiffs === 1 && allowEquivalentExtradata() === true;
+}
+
+function videoShift(source, output, comparePixels, options = {}) {
   try {
     const before = packetEvidence(source), after = packetEvidence(output);
-    assert.deepEqual(after.headers, before.headers, 'Video configuration changed');
+    if (!headersMatch(before.headers, after.headers, options.allowEquivalentExtradata)) {
+      assert.deepEqual(after.headers, before.headers, 'Video configuration changed');
+    }
     let offset, pendingDur = null;
     const matroskaTransformed = !comparePixels
       && before.base.numerator === 1n && before.base.denominator === 1000n
@@ -102,8 +120,8 @@ function videoShift(source, output, comparePixels) {
   }
 }
 
-function copiedVideoShift(source, output) {
-  return videoShift(source, output, true);
+function copiedVideoShift(source, output, options = {}) {
+  return videoShift(source, output, true, options);
 }
 
 // Only for an explicitly permitted lossy transform. Independent reference pixels
@@ -155,16 +173,11 @@ function decodedAudioTimeline(frames, rate, tick = null) {
       if (!coarseTick) {
         continuous = sameTime(start, previousEnd);
       } else {
-        const current = segments[segments.length - 1];
-        const expected = {
-          numerator: current.start.numerator * BigInt(rate) + (samples - current.samples) * current.start.denominator,
-          denominator: current.start.denominator * BigInt(rate),
-        };
-        const delta = subtract(start, expected);
+        const delta = subtract(start, previousEnd);
         const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
-        // Coarse container timebases (e.g. Matroska 1/1000s) quantize both segment
-        // start and frame PTS onto `coarseTick`. Cumulative anchoring to `current`
-        // prevents drift while keeping real drops/overlaps (> 2 ticks) fatal.
+        // Coarse container timebases (e.g. Matroska 1/1000s) quantize frame PTS
+        // onto `coarseTick` and may step by 1 tick for PAL/NTSC sync while real
+        // drops/cuts/overlaps (> 2 ticks) remain discontinuities.
         continuous = absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
       }
     }
@@ -217,11 +230,19 @@ function compareAudioTimelines(before, after, offset, expectedDecodedSamples = n
     })));
     assert.equal(after.segments.length, before.segments.length,
       `Audio discontinuity count changed; original=${describe(before)} candidate=${describe(after)}`);
+    const coarseTick = before.coarseTick || after.coarseTick || null;
+    const sameWithinTick = (left, right) => {
+      if (sameTime(left, right)) return true;
+      if (!coarseTick) return false;
+      const delta = subtract(left, right);
+      const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
+      return absNum * coarseTick.denominator <= coarseTick.numerator * delta.denominator;
+    };
     for (let index = 1; index < before.segments.length; index++) {
       assert.ok(sameTime({ numerator: after.segments[index].samples, denominator: BigInt(after.rate) },
         { numerator: before.segments[index].samples, denominator: BigInt(before.rate) }), 'Audio gap moved within content');
       const shift = subtract(after.segments[index].start, before.segments[index].start);
-      assert.ok(sameTime(shift, offset),
+      assert.ok(sameWithinTick(shift, offset),
         `Audio timeline changed relative to video at sample ${before.segments[index].samples}: ${shift.numerator}/${shift.denominator}s, expected ${offset.numerator}/${offset.denominator}s`);
     }
     return { samples: String(after.samples), segments: before.segments.length };

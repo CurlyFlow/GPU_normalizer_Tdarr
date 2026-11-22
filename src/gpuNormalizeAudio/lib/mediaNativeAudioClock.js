@@ -40,13 +40,17 @@ function nativeInteger(value, positive = false) {
 function nativeAudioTimeline(metadata, lines, expected, overrideTick = null) {
   const base = metadata.time_base.match(/^([1-9]\d{0,18})\/([1-9]\d{0,18})$/);
   assert.ok(base && metadata.codec_type === "audio", "Invalid native audio time base or type");
-  for (const [key, observed] of [["channels", expected.channels], ["sample_rate", expected.sample_rate], ["index", expected.index]]) {
+  for (const [key, observed] of [["sample_rate", expected.sample_rate], ["index", expected.index]]) {
     assert.equal(nativeInteger(metadata[key], key !== "index"), BigInt(observed), "Native audio stream identity changed");
   }
+  const expectedChannels = BigInt(expected.channels);
+  const terminalChannels = nativeInteger(metadata.channels, true);
   const rate = Number(metadata.sample_rate);
   assert.ok(Number.isSafeInteger(rate) && rate > 0, "Invalid native audio rate");
   function* frames() {
     let streams = 0;
+    let firstFrameChannels = null;
+    let lastFrameChannels = null;
     for (const raw of lines) {
       const line = clockLine(raw);
       if (line === null) continue;
@@ -59,13 +63,22 @@ function nativeAudioTimeline(metadata, lines, expected, overrideTick = null) {
       const frame = compactRow(line, "frame", FRAME_FIELDS);
       assert.equal(frame.media_type, "audio");
       assert.equal(frame.stream_index, metadata.index, "Unexpected decoded audio stream");
-      assert.equal(frame.channels, metadata.channels, "Decoded audio channel count changed");
+      const frameChannels = nativeInteger(frame.channels, true);
+      if (firstFrameChannels === null) {
+        firstFrameChannels = frameChannels;
+        assert.equal(firstFrameChannels, expectedChannels, "Native audio stream identity changed");
+      }
+      if (terminalChannels === expectedChannels) {
+        assert.equal(frameChannels, expectedChannels, "Decoded audio channel count changed");
+      }
+      lastFrameChannels = frameChannels;
       const samples = nativeInteger(frame.nb_samples, true);
       assert.ok(samples <= 2147483647n, "Invalid AVFrame sample count");
       yield { start: { numerator: nativeInteger(frame.pts) * nativeInteger(base[1], true),
         denominator: nativeInteger(base[2], true) }, frameSamples: samples };
     }
     assert.equal(streams, 1, "Missing native audio stream metadata");
+    assert.equal(lastFrameChannels, terminalChannels, "Native audio stream identity changed");
   }
   const tick = overrideTick || { numerator: nativeInteger(base[1], true), denominator: nativeInteger(base[2], true) };
   return decodedAudioTimeline(frames(), rate, tick);

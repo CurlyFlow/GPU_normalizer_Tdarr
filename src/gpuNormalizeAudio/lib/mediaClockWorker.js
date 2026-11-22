@@ -42,7 +42,7 @@ async function verifyRequest(request) {
       evidenceCache, initialDigests, deferPostDigest: true };
     [, copiedAudio] = await Promise.all([
       prewarmClockEvidence(clockSpec, evidenceCache),
-      verifyCopiedAudio({ ...request, audioMap, sourceStreams, candidateStreams, ffmpegPath: native.executable }),
+      verifyCopiedAudio({ ...request, audioMap, sourceStreams, candidateStreams, ffmpegPath: native.executable, directory, evidenceCache }),
     ]);
     clock = verifyClockFiles(clockSpec);
     clockErrors = [...clock.errors];

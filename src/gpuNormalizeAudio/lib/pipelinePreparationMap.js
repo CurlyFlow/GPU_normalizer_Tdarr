@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
 const { fileDigest } = require("./mediaEvidenceFiles");
 const { validateReceipt } = require("./mediaClockProtocol");
 const { inspectMedia } = require("./mediaSourceProbe");
@@ -36,11 +37,17 @@ function bindPreparationMap(source, prepared, retainedIndices, originalId) {
   if (selected.some((stream, index) => stream.index !== retainedIndices[index])) {
     throw Error("Preparation selection changes the source stream order");
   }
-  if (selected.length !== after.length) throw Error("Prepared stream count differs from its explicit selection");
   const promotedMkv = path.extname(source._id).toLowerCase() === ".mkv"
     && path.extname(prepared._id).toLowerCase() === ".mp4";
+  const comparableAfter = promotedMkv
+    ? after.filter(stream => !isRegeneratedChapterCarrier("mp4", stream))
+    : after;
+  if (promotedMkv && comparableAfter.some((stream, index) => stream.index !== index)) {
+    throw Error("Regenerated MP4 chapter carrier must be trailing");
+  }
+  if (selected.length !== comparableAfter.length) throw Error("Prepared stream count differs from its explicit selection");
   const mapping = selected.map((stream, index) => {
-    const actual = after[index];
+    const actual = comparableAfter[index];
     const promotedSub = promotedMkv && stream.codec_type === "subtitle"
       && ["subrip", "ass"].includes(stream.codec_name) && actual.codec_name === "mov_text";
     if (actual.codec_type !== stream.codec_type || (!promotedSub && actual.codec_name !== stream.codec_name)
@@ -54,7 +61,7 @@ function bindPreparationMap(source, prepared, retainedIndices, originalId) {
       sourceIndex: stream.index,
       sourceOrdinal: before.filter(value => value.codec_type === stream.codec_type).indexOf(stream),
       preparedIndex: actual.index,
-      preparedOrdinal: after.filter(value => value.codec_type === actual.codec_type).indexOf(actual),
+      preparedOrdinal: comparableAfter.filter(value => value.codec_type === actual.codec_type).indexOf(actual),
     };
   });
   return {

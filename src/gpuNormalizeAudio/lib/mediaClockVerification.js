@@ -1,11 +1,12 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileDigest } = require("./mediaEvidenceFiles");
 const { framehash, framehashCacheKey, framehashToFileAsync } = require("./mediaFrameEvidence");
-const { copiedVideoShift, compareAudioTimelines } = require("./mediaClockEvidence");
+const { copiedVideoShift, compareAudioTimelines, comparePacketPayloads } = require("./mediaClockEvidence");
 const { probeAudioTimeline, probeAudioTimelineAsync, audioTimelineCacheKey } = require("./mediaNativeAudioClock");
 const { resolveVideoMap } = require("./mediaClockProtocol");
 const { audioPresentation } = require("./mediaAudioWindow");
@@ -97,7 +98,53 @@ async function prewarmClockEvidence(spec, evidenceCache, extraFramehashes = []) 
   await runTasksWithConcurrency(tasks, 6);
 }
 
-function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffprobePath, directory, eofContext = null, sourceClockTick = null, evidenceCache = null }, offset) {
+function readStreamExtradata(file, videoOrdinal, ffprobePath) {
+  const result = spawnSync(ffprobePath, ["-v", "error", "-select_streams", `v:${videoOrdinal}`,
+    "-show_data", "-show_streams", file], { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024 });
+  if (result.error || result.status !== 0) return null;
+  const bytes = [];
+  let inExtradata = false;
+  for (const line of String(result.stdout || "").split(/\r?\n/)) {
+    if (line === "extradata=") { inExtradata = true; continue; }
+    if (!inExtradata) continue;
+    const match = line.match(/^[0-9a-fA-F]{8}:\s+([0-9a-fA-F ]{1,40})/);
+    if (!match) break;
+    const hex = match[1].replace(/\s+/g, "");
+    for (let offset = 0; offset + 1 < hex.length; offset += 2) {
+      bytes.push(Number.parseInt(hex.slice(offset, offset + 2), 16));
+    }
+  }
+  return bytes.length ? Buffer.from(bytes) : null;
+}
+
+function normalizeHvccCompleteness(raw) {
+  if (!raw || raw.length < 23 || raw[0] !== 1) return null;
+  const copy = Buffer.from(raw);
+  const numArrays = copy[22];
+  let cursor = 23;
+  for (let arrayIndex = 0; arrayIndex < numArrays; arrayIndex++) {
+    if (cursor + 3 > copy.length) return null;
+    copy[cursor] &= 0x7f; // Clear only ISO 14496-15 array_completeness bit (0x80).
+    const numNalus = copy.readUInt16BE(cursor + 1);
+    cursor += 3;
+    for (let nalu = 0; nalu < numNalus; nalu++) {
+      if (cursor + 2 > copy.length) return null;
+      const len = copy.readUInt16BE(cursor);
+      cursor += 2 + len;
+      if (cursor > copy.length) return null;
+    }
+  }
+  return cursor === copy.length ? copy : null;
+}
+
+function equivalentHevcExtradata(sourceFile, sourceIndex, candidateFile, candidateIndex, ffprobePath) {
+  if (!ffprobePath) return false;
+  const before = normalizeHvccCompleteness(readStreamExtradata(sourceFile, sourceIndex, ffprobePath));
+  const after = normalizeHvccCompleteness(readStreamExtradata(candidateFile, candidateIndex, ffprobePath));
+  return Boolean(before && after && Buffer.compare(before, after) === 0);
+}
+
+function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffmpegPath, ffprobePath, directory, eofContext = null, sourceClockTick = null, evidenceCache = null }, offset) {
   const sourceAudio = sourceStreams.filter(stream => stream.type === "audio");
   const candidateAudio = candidateStreams.filter(stream => stream.type === "audio");
   const errors = [], audio = [];
@@ -115,7 +162,20 @@ function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, can
       if (!Number.isSafeInteger(map.rate) || map.rate <= 0 || map.rate !== Number(candidate.sample_rate)
           || map.channels !== Number(candidate.channels)) throw new Error("Native audio specification differs or is unknown");
       if (![4, 8].includes(map.sampleBytes)) throw new Error("Unsupported clock evidence sample width");
-      const sourceTimeline = probeAudioTimeline(sourceFile, map.sourceIndex, source, ffprobePath, directory, sourceTick, evidenceCache);
+      let sourceTimeline;
+      try {
+        sourceTimeline = probeAudioTimeline(sourceFile, map.sourceIndex, source, ffprobePath, directory, sourceTick, evidenceCache);
+      } catch (sourceError) {
+        if (map.compareSamples && source.codec_name === candidate.codec_name && ffmpegPath
+            && /Complete native audio frame inspection failed/.test(sourceError.message)) {
+          const copied = comparePacketPayloads(
+            framehash(sourceFile, `0:a:${map.sourceIndex}`, "copy", ffmpegPath, directory, null, evidenceCache),
+            framehash(candidateFile, `0:a:${map.candidateIndex}`, "copy", ffmpegPath, directory, null, evidenceCache));
+          audio.push({ map_id: map.id, status: "pass", packetCopyFallback: true, packets: copied.packets });
+          continue;
+        }
+        throw sourceError;
+      }
       const candidateTick = map.compareSamples && sourceTimeline.coarseTick ? sourceTimeline.coarseTick : null;
       const candidateTimeline = probeAudioTimeline(candidateFile, map.candidateIndex, candidate, ffprobePath, directory, candidateTick, evidenceCache);
       const eofEntry = eofContext?.streams?.[map.candidateIndex];
@@ -140,7 +200,7 @@ function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, can
   return { audio, errors };
 }
 
-function verifyVideoClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, videoMap = null, ffmpegPath, directory, evidenceCache = null }) {
+function verifyVideoClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, videoMap = null, ffmpegPath, ffprobePath = null, directory, evidenceCache = null }) {
   const sourceVideos = sourceStreams.filter(stream => stream.type === "video");
   const candidateVideos = candidateStreams.filter(stream => stream.type === "video");
   const mappedVideos = resolveVideoMap(videoMap, sourceVideos.length);
@@ -150,9 +210,12 @@ function verifyVideoClocks({ sourceFile, candidateFile, sourceStreams, candidate
   for (const map of mappedVideos) {
     const index = map.candidateIndex;
     try {
+      const srcStream = sourceVideos[map.sourceIndex], candStream = candidateVideos[index];
+      const hevc = srcStream?.codec_name === "hevc" && candStream?.codec_name === "hevc";
       const shift = copiedVideoShift(
         framehash(sourceFile, `0:v:${map.sourceIndex}`, "copy", ffmpegPath, directory, null, evidenceCache),
-        framehash(candidateFile, `0:v:${index}`, "copy", ffmpegPath, directory, null, evidenceCache));
+        framehash(candidateFile, `0:v:${index}`, "copy", ffmpegPath, directory, null, evidenceCache),
+        hevc ? { allowEquivalentExtradata: () => equivalentHevcExtradata(sourceFile, map.sourceIndex, candidateFile, index, ffprobePath) } : {});
       if (index > 0 && shift.numerator * offset.denominator !== offset.numerator * shift.denominator) {
         throw new Error("Video streams do not share one timeline translation");
       }
@@ -168,7 +231,7 @@ function verifyVideoClocks({ sourceFile, candidateFile, sourceStreams, candidate
 }
 
 function verifyClockFiles(spec) {
-  const { sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffprobePath, directory, eofContext = null, sourceClockTick = null } = spec;
+  const { sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffmpegPath, ffprobePath, directory, eofContext = null, sourceClockTick = null } = spec;
   const evidenceCache = spec.evidenceCache || { timelines: new Map() };
   const inputs = [...new Set([sourceFile, candidateFile])].map(file => ({
     file,
@@ -176,7 +239,7 @@ function verifyClockFiles(spec) {
   }));
   const { offset, errors, ...video } = verifyVideoClocks({ ...spec, evidenceCache });
   if (audioMap.length === 0 && video.required_video_streams === 0) errors.push("Media clock proof covers no streams");
-  const clocks = verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffprobePath, directory, eofContext, sourceClockTick, evidenceCache }, offset);
+  const clocks = verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffmpegPath, ffprobePath, directory, eofContext, sourceClockTick, evidenceCache }, offset);
   errors.push(...clocks.errors);
   if (!spec.deferPostDigest) {
     for (const input of inputs) {

@@ -7,7 +7,7 @@ const { mediaTools } = require("./mediaTools");
 const { inspectMedia, inspectStreams } = require("./mediaSourceProbe");
 const { decoderIdentity } = require("./mediaEvidenceTools");
 const { fileDigest, sameFileGeneration, readRetainedReceipt, retainedReceipt, writePrivateReceipt } = require("./mediaEvidenceFiles");
-const { createAudioSelectionIntent } = require("./audioValueSelection");
+const { createAudioSelectionIntent, audioValueMaps } = require("./audioValueSelection");
 const { CPU_PLUGIN_SHA256, normalizesAudio, validateValueReceipt } = require("./mediaAudioValueProtocol");
 const { audioReferenceInputs } = require("./mediaAudioReference");
 const { requireStageProducer } = require("./mediaStageProducer");
@@ -94,9 +94,19 @@ function isGenuinelyNormalized(map, result) {
   return normalizesAudio(map) && result.reference.output.file !== result.reference.prepared_input.file;
 }
 
+function originalDecodedSamples(originalWindow) {
+  const win = originalWindow.window;
+  if (originalWindow.scope === "observed-iso-aac-window-only") {
+    const packets = BigInt(win.samples);
+    const priming = BigInt(win.mediaTime || 0);
+    return packets * 1024n - priming;
+  }
+  return BigInt(win.samples);
+}
+
 // Explicit generation-bound EOF context joining configured selection, fresh
 // first-candidate CPU values and admitted-original presentation windows.
-function buildNormalizedEofContext(args, { valueBasis, candidateFile, expectedPluginSha256 = CPU_PLUGIN_SHA256, renamed = null }) {
+function buildNormalizedEofContext(args, { valueBasis = null, selectionMaps = null, candidateFile, expectedPluginSha256 = CPU_PLUGIN_SHA256, renamed = null }) {
   const sourceFile = args.inputFileObj._id;
   const rawTools = mediaTools(args);
   const decoder = decoderIdentity(rawTools.ffmpeg), prober = decoderIdentity(rawTools.ffprobe);
@@ -104,25 +114,27 @@ function buildNormalizedEofContext(args, { valueBasis, candidateFile, expectedPl
   const tools = { decoder, prober };
   const source = { file: sourceFile, identity: fileDigest(sourceFile) };
   const actualCandidate = resolveCandidateFile(candidateFile, renamed);
-  const basis = readFreshValueBasis(valueBasis, sourceFile, candidateFile, tools, renamed);
+  const basis = valueBasis ? readFreshValueBasis(valueBasis, sourceFile, candidateFile, tools, renamed) : null;
+  const maps = basis ? basis.request.maps : selectionMaps;
+  assert.ok(Array.isArray(maps) && maps.length > 0, "Normalized EOF requires approved audio maps");
   const candidate = { file: candidateFile,
-    identity: renamed && candidateFile === renamed.from
+    identity: basis && renamed && candidateFile === renamed.from
       ? basis.inputs.find(input => input.file === candidateFile).identity : fileDigest(actualCandidate) };
   const sourceStreams = inspectStreams(sourceFile, ffprobeExec);
-  const selection = createAudioSelectionIntent(args, basis.request.maps, sourceStreams);
-  assert.deepEqual(selection.maps, basis.request.maps, "Value basis maps differ from approved selection");
+  const selection = createAudioSelectionIntent(args, maps, sourceStreams);
+  assert.deepEqual(selection.maps, maps, "Value basis maps differ from approved selection");
   const preparation = resolvePreparationAuthority(args, source, tools);
   const sourceAudio = sourceStreams.filter(stream => stream.type === "audio");
   const candidateAudio = inspectStreams(actualCandidate, ffprobeExec).filter(stream => stream.type === "audio");
   assert.equal(candidateAudio.length, selection.maps.length, "Candidate audio coverage differs from selection");
 
   const streams = selection.maps.map((map, index) => {
-    const result = basis.results[index];
-    if (!isGenuinelyNormalized(map, result)) {
+    const result = basis ? basis.results[index] : null;
+    if (basis ? !isGenuinelyNormalized(map, result) : !normalizesAudio(map)) {
       return { id: map.id, mode: "strict", sourceIndex: map.sourceIndex,
         candidateIndex: map.candidateIndex, channels: map.channels };
     }
-    assert.equal(basis.request.plugin?.sha256, expectedPluginSha256, "Normalized EOF requires pinned CPU plugin");
+    if (basis) assert.equal(basis.request.plugin?.sha256, expectedPluginSha256, "Normalized EOF requires pinned CPU plugin");
     const srcStream = sourceAudio[map.sourceIndex], candStream = candidateAudio[map.candidateIndex];
     assert.ok(srcStream && candStream?.codec_name === "aac" && Number(candStream.channels) === map.channels,
       "Normalized EOF requires mapped AAC candidate output");
@@ -131,12 +143,19 @@ function buildNormalizedEofContext(args, { valueBasis, candidateFile, expectedPl
     const originalWindow = observeNativeAudioWindow(origin.file, origin.audioIndex, rawTools.ffprobe, path.dirname(actualCandidate));
     assert.equal(originalWindow.sampleRate, sourceRate, "Prepared audio rate differs from admitted original");
     assert.ok(sameFileGeneration(originalWindow.identity, origin.identity), "Admitted original generation changed");
-    const pair = result.values[0];
-    assert.equal(pair.candidate.samples, pair.source.samples, "First-candidate CPU decoded samples disagree");
-    assert.ok(Number.isSafeInteger(pair.source.samples) && pair.source.samples > 0, "Invalid CPU decoded sample count");
-    const rawSamples = BigInt(pair.source.samples), channels = BigInt(map.channels);
-    assert.equal(rawSamples % channels, 0n, "CPU decoded sample count is not aligned to channel count");
-    const cpuDecodedSamples = rawSamples / channels;
+    let cpuDecodedSamples;
+    if (basis) {
+      const pair = result.values[0];
+      assert.equal(pair.candidate.samples, pair.source.samples, "First-candidate CPU decoded samples disagree");
+      assert.ok(Number.isSafeInteger(pair.source.samples) && pair.source.samples > 0, "Invalid CPU decoded sample count");
+      const rawSamples = BigInt(pair.source.samples), channels = BigInt(map.channels);
+      assert.equal(rawSamples % channels, 0n, "CPU decoded sample count is not aligned to channel count");
+      cpuDecodedSamples = rawSamples / channels;
+    } else {
+      cpuDecodedSamples = normalizedAacCountDomain({
+        sourceSamples: originalDecodedSamples(originalWindow), sourceRate, encodedRate, stereo: map.stereo,
+      }).decodedSamples;
+    }
     assert.ok(cpuDecodedSamples > 0n, "Invalid CPU decoded frame count");
     return {
       id: map.id, mode: "normalized-aac", sourceIndex: map.sourceIndex, candidateIndex: map.candidateIndex,
@@ -154,7 +173,7 @@ function buildNormalizedEofContext(args, { valueBasis, candidateFile, expectedPl
   assert.deepEqual(decoderIdentity(rawTools.ffmpeg), decoder, "Normalized EOF decoder changed");
   assert.deepEqual(decoderIdentity(rawTools.ffprobe), prober, "Normalized EOF prober changed");
   return {
-    schema: SCHEMA, scope: SCOPE, source, candidate, selection, valueBasis,
+    schema: SCHEMA, scope: SCOPE, source, candidate, selection, valueBasis: valueBasis || null,
     preparation, decoder, prober, streams,
   };
 }
@@ -164,8 +183,13 @@ function validateNormalizedEofContext(context, { args, candidateFile, expectedPl
   assert.ok(clean && Object.keys(clean).sort().join() === CONTEXT_KEYS
     && clean.schema === SCHEMA && clean.scope === SCOPE, "Invalid normalized EOF context");
   const expected = buildNormalizedEofContext(args, {
-    valueBasis: clean.valueBasis, candidateFile, expectedPluginSha256, renamed,
+    valueBasis: clean.valueBasis, selectionMaps: clean.valueBasis ? null : clean.selection?.maps,
+    candidateFile, expectedPluginSha256, renamed,
   });
+  if (!clean.valueBasis && renamed && candidateFile === renamed.from
+      && sameFileGeneration(clean.candidate?.identity, expected.candidate?.identity, true)) {
+    expected.candidate = { ...expected.candidate, identity: clean.candidate.identity };
+  }
   assert.deepEqual(clean, expected, "Normalized EOF context differs from verified execution state");
   return clean;
 }
@@ -196,8 +220,8 @@ function streamMayNeedNormalizedEof(map, result, srcStream, candStream, track) {
 // and decoded duration may genuinely differ from the source (e.g. non-integral
 // rate conversion or non-AAC frame padding into 1024-sample AAC). Unsupported
 // containers and exact-duration streams return null so strict clocks stay active.
-function maybeRetainNormalizedEofContext(args, { valueBasis, candidateFile, expectedPluginSha256 = CPU_PLUGIN_SHA256 }) {
-  const basis = readRetainedReceipt(valueBasis);
+function maybeRetainNormalizedEofContext(args, { valueBasis = null, audioSpecs = null, outputContract = null, candidateFile, expectedPluginSha256 = CPU_PLUGIN_SHA256 }) {
+  const basis = valueBasis ? readRetainedReceipt(valueBasis) : null;
   const rawTools = mediaTools(args), prober = decoderIdentity(rawTools.ffprobe);
   const ffprobeExec = (prober.native || prober).executable;
   const candidateMedia = inspectMedia(candidateFile, ffprobeExec);
@@ -205,9 +229,10 @@ function maybeRetainNormalizedEofContext(args, { valueBasis, candidateFile, expe
   const sourceFile = args.inputFileObj._id;
   const sourceAudio = inspectStreams(sourceFile, ffprobeExec).filter(stream => stream.type === "audio");
   const candidateAudio = candidateMedia.streams.filter(stream => stream.codec_type === "audio");
-  const normalizedEntries = basis.request.maps
-    .map((map, index) => ({ map, result: basis.results[index] }))
-    .filter(({ map, result }) => isGenuinelyNormalized(map, result));
+  const maps = basis ? basis.request.maps : audioValueMaps(args, audioSpecs, outputContract);
+  const normalizedEntries = maps
+    .map((map, index) => ({ map, result: basis ? basis.results[index] : null }))
+    .filter(({ map, result }) => (basis ? isGenuinelyNormalized(map, result) : normalizesAudio(map)));
   if (!normalizedEntries.length) return null;
   const originalFile = args.variables?.mediaPipeline ? args.originalLibraryFile?._id : sourceFile;
   if (!originalFile || !canonicalPath(originalFile)) return null;
@@ -226,20 +251,40 @@ function maybeRetainNormalizedEofContext(args, { valueBasis, candidateFile, expe
     const srcStream = sourceAudio[map.sourceIndex], candStream = candidateAudio[map.candidateIndex];
     const origStream = originalAudio[ordinals[index]];
     if (!srcStream || candStream?.codec_name !== "aac") return false;
-    if (isOrigMov && origStream.codec_name === "aac") {
-      if (Number(srcStream.sample_rate) === Number(candStream.sample_rate)) return false;
-      movTracks ??= storedAudioPresentation(originalFile).tracks;
-      return streamMayNeedNormalizedEof(map, result, srcStream, candStream, movTracks[ordinals[index]]);
-    }
-    const rawSamples = BigInt(result?.values?.[0]?.source?.samples || 0), channels = BigInt(map.channels);
-    if (rawSamples <= 0n || channels <= 0n || rawSamples % channels !== 0n) return true;
-    const cpuDecodedSamples = rawSamples / channels;
+    const sourceRate = Number(srcStream.sample_rate), encodedRate = Number(candStream.sample_rate);
     const observed = observeNativeAudioWindow(originalFile, ordinals[index], rawTools.ffprobe, path.dirname(candidateFile));
-    return BigInt(observed.window.samples) * BigInt(candStream.sample_rate)
-      !== cpuDecodedSamples * BigInt(srcStream.sample_rate);
+    let cpuDecodedSamples;
+    if (basis) {
+      if (isOrigMov && origStream.codec_name === "aac") {
+        if (sourceRate === encodedRate) return false;
+        movTracks ??= storedAudioPresentation(originalFile).tracks;
+        return streamMayNeedNormalizedEof(map, result, srcStream, candStream, movTracks[ordinals[index]]);
+      }
+      const rawSamples = BigInt(result?.values?.[0]?.source?.samples || 0), channels = BigInt(map.channels);
+      if (rawSamples <= 0n || channels <= 0n || rawSamples % channels !== 0n) return true;
+      cpuDecodedSamples = rawSamples / channels;
+    } else {
+      cpuDecodedSamples = normalizedAacCountDomain({
+        sourceSamples: originalDecodedSamples(observed), sourceRate, encodedRate, stereo: map.stereo,
+      }).decodedSamples;
+      if (isOrigMov && origStream.codec_name === "aac") {
+        if (sourceRate === encodedRate) return false;
+        movTracks ??= storedAudioPresentation(originalFile).tracks;
+        const track = movTracks[ordinals[index]];
+        if (!track) return false;
+        const codedSamples = track.durationRuns.reduce((sum, run) => sum + BigInt(run.count) * BigInt(run.duration), 0n)
+          - BigInt(track.mediaTime);
+        const noEofTrim = BigInt(track.declaredEnd.numerator) * BigInt(track.rate)
+          >= BigInt(track.presentationEnd) * BigInt(track.declaredEnd.denominator);
+        return !(noEofTrim && codedSamples > 0n && codedSamples * BigInt(encodedRate) === cpuDecodedSamples * BigInt(sourceRate));
+      }
+    }
+    return BigInt(observed.window.samples) * BigInt(encodedRate) !== cpuDecodedSamples * BigInt(sourceRate);
   });
   if (!needsEof) return null;
-  return retainNormalizedEofContext(args, { valueBasis, candidateFile, expectedPluginSha256 });
+  return retainNormalizedEofContext(args, {
+    valueBasis, selectionMaps: basis ? null : maps, candidateFile, expectedPluginSha256,
+  });
 }
 
 function readNormalizedEofContextForWorker(eofBinding, { sourceFile, directory, decoder, prober, ffprobePath, expectedPluginSha256 = null }) {
@@ -249,8 +294,8 @@ function readNormalizedEofContextForWorker(eofBinding, { sourceFile, directory, 
   assert.ok(context.candidate?.file?.startsWith(directory + path.sep), "Normalized EOF candidate is outside this execution");
   assert.deepEqual(context.decoder, decoder, "Normalized EOF decoder differs from worker");
   assert.deepEqual(context.prober, prober, "Normalized EOF prober differs from worker");
-  const basis = readRetainedReceipt(context.valueBasis);
-  const pluginSha = expectedPluginSha256 ?? basis.request?.plugin?.sha256;
+  const basis = context.valueBasis ? readRetainedReceipt(context.valueBasis) : null;
+  const pluginSha = expectedPluginSha256 ?? basis?.request?.plugin?.sha256 ?? null;
   const workerArgs = {
     inputFileObj: { _id: sourceFile },
     inputs: context.selection?.inputs,

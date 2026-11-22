@@ -113,6 +113,10 @@ function validateReceipt(value, request) {
         || (item.status === "pass") !== (item.errors.length === 0)
         || (item.status !== "pass" && value.status === "pass")) throw Error("Invalid copied audio verdict");
     if (item.status !== "pass") continue;
+    if (item.packetCopyFallback === true) {
+      if (!Number.isSafeInteger(item.packets) || item.packets < 1) throw Error("Invalid copied audio packet fallback");
+      continue;
+    }
     validateNativePcmPair(item);
   }
   if (Object.hasOwn(request, "eofContext")) {

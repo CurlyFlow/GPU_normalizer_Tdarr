@@ -64,6 +64,7 @@ async function publishOutputPackage({
   validateOutputStreams(outputContract, parseOutputProbe(verifyRes.output));
   const externalComparator = !hasMediaPipelineContext(args) && process.env.LOUDNORM_GPU_DEFER_EXTERNAL_VERIFY === "1";
   const deferVerify = externalComparator || (!requireCpuAudit && externalVerifyDeferred(args));
+  const runCpuValueAudit = Boolean(requireCpuAudit && !externalComparator);
   let valueBasis = null;
   let eofContext = null;
   if (deferVerify) {
@@ -73,9 +74,11 @@ async function publishOutputPackage({
     } else {
       args.jobLog("GPU normalize standalone mode: output stream validation enabled (CPU reference audit off).");
     }
-  } else {
+  } else if (runCpuValueAudit) {
     valueBasis = await observeValues(args, tmpOutputFilePath, audioSpecs, outputContract);
     eofContext = retainEofContext(args, { valueBasis, candidateFile: tmpOutputFilePath });
+  } else {
+    eofContext = retainEofContext(args, { valueBasis: null, audioSpecs, outputContract, candidateFile: tmpOutputFilePath });
   }
   if (!deferVerify || externalComparator) {
     const transported = await transportAudio(args, tmpOutputFilePath, audioSpecs, outputContract, eofContext);
@@ -89,13 +92,13 @@ async function publishOutputPackage({
   }
   if (!deferVerify) {
     await verifyAudioOutputClock(args, tmpOutputFilePath, audioSpecs, outputContract, eofContext);
-    await verifyValues(args, tmpOutputFilePath, audioSpecs, outputContract, valueBasis);
+    if (runCpuValueAudit) await verifyValues(args, tmpOutputFilePath, audioSpecs, outputContract, valueBasis);
   }
   transaction.verifyTmp = "done";
   transaction.state = "publish";
   logProfileStage(args, { scope: "plugin", name: "verify_output", wall_sec: verifyRes.wallSec });
   const publishRes = await runChecked(`mv -f ${q(tmpOutputFilePath)} ${q(outputFilePath)}`, { label: publishLabel });
-  if (!deferVerify) bindAudioHandoff(args, tmpOutputFilePath, outputFilePath);
+  if (!deferVerify) bindAudioHandoff(args, tmpOutputFilePath, outputFilePath, { audioSpecs, outputContract });
   transaction.publish = "done";
   transaction.state = "cleanup";
   logProfileStage(args, { scope: "plugin", name: "publish_output", wall_sec: publishRes.wallSec });
