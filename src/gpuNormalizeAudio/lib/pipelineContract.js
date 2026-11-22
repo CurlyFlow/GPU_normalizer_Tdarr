@@ -66,6 +66,8 @@ function audioResult(args, inputId, result, retain = retainAudioIntent) {
     mediaPipelinePreparationEvidence: args.variables.mediaPipelinePreparationEvidence,
     mediaPipelinePreparationIntent: args.variables.mediaPipelinePreparationIntent,
     mediaPipelinePreparationPlan: args.variables.mediaPipelinePreparationPlan,
+    ...(args.variables.mediaPipelineConcurrency !== undefined
+      ? { mediaPipelineConcurrency: args.variables.mediaPipelineConcurrency } : {}),
     mediaPipelineAudioIntent: intent,
     mediaPipelineAudio: { schema: SCHEMA, inputId, outputId: result.outputFileObj._id,
       outputNumber: result.outputNumber } } };

@@ -7,7 +7,7 @@ const {
   logProfileStage,
 } = require("./common");
 const {
-  acquireConcurrencyLock,
+  runResourceTask,
 } = require("./concurrencyLock");
 const {
   createPluginRuntimeCommandContext,
@@ -63,15 +63,16 @@ async function runGpuNormalizePlugin(args, {
     processStreams,
   } = processingContext;
 
-  const releaseConcurrencyLock = await acquireConcurrencyLock(args, args.inputs.lockFile, args.inputs.maxConcurrentJobs);
   try {
-    const streamResult = await processStreams();
+    const streamResult = planSetup.audioPlans.length > 0
+      ? await runResourceTask(args, "gpu", () => processStreams())
+      : { completedWork: 0, directMuxCompleted: false };
     if (streamResult.outputResult) return streamResult.outputResult;
-    return await finalizeOutput({
+    return await runResourceTask(args, "cpu", () => finalizeOutput({
       completedWork: streamResult.completedWork,
       muxWork: planSetup.muxWork,
       directMuxCompleted: streamResult.directMuxCompleted || isPairedDirectMuxCompleted(),
-    });
+    }));
   } catch (err) {
     statsContext.cancelBackgroundCpu();
     await statsContext.settleCpuLoudnormTasks();
@@ -84,8 +85,6 @@ async function runGpuNormalizePlugin(args, {
       args.jobLog(`GPU normalize cleanup after failure failed: ${cleanupErr.message}`);
     }
     throw err;
-  } finally {
-    releaseConcurrencyLock();
   }
 }
 

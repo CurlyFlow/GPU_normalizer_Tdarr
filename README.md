@@ -99,6 +99,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 | `Prepare Audio For MP4` | `false` | Converts retained MP4-incompatible audio codecs to AAC inside this plugin when a later flow step remuxes to MP4 (keeps container, video, and already-compatible audio unchanged). |
 | `Integrated Loudness I` / `LRA` / `TP` | `-18.0` / `7.0` / `-2.0` | Standard `loudnorm` loudness (LUFS), range (LU), and true-peak (dBTP) targets. |
 | `Max Gain dB` | `15` | Safety gate in dB: streams needing more gain than this are copied unchanged instead of normalized (`0` disables the gate). |
+| `Max Concurrent CPU Tasks` | `1` | Host-wide CPU concurrency limit across running jobs and plugins for muxing, copy-only runs, and verification (`0` disables the guard). |
 | `Max Concurrent GPU Tasks` | `1` | Host-wide GPU concurrency limit across running jobs and plugins (`0` disables the guard). |
 | `Debug Logging` | `false` | Enables verbose FFmpeg/runtime logs for troubleshooting. |
 
