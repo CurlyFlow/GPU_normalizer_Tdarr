@@ -34,7 +34,7 @@ function createPluginAudioConfig({
   const stereoFallbackFirstOnly = boolInput(args.inputs.stereoFallbackFirstOnly, true);
   const stereoLanguageOrder = stereoFallbackLanguageOrder(args.inputs.stereoFallbackOrder);
   const normalizeOnlyLanguages = normalizeOnlyLanguageOrder(args.inputs.normalizeOnlyLanguages);
-  const removeOtherLanguages = boolInput(args.inputs.removeOtherLanguages, true);
+  const removeOtherLanguages = boolInput(args.inputs.removeOtherLanguages, false);
   const fallbackToUndetectedAudio = boolInput(args.inputs.fallbackToUndetectedAudio, true);
   const audioBitrate = String(args.inputs.audioBitrate || "192k").replace(/[^0-9kKmM]/g, "") || "192k";
   const encodeThreadsInput = String(process.env.LOUDNORM_GPU_ENCODE_THREADS || "2").trim();

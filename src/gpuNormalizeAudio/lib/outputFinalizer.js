@@ -142,14 +142,18 @@ function createOutputFinalizer({ model, runtimeContext, observeValues = observeA
     if (directMuxCompleted) {
       logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: 0, direct_paired: 1 });
     } else {
-      const directClock = await tryDirectClockFinalMux({
-        args,
-        container,
-        inputFile: args.inputFileObj?._id,
-        inputStreams: args.inputFileObj?.ffProbeData?.streams || [],
-        audioSpecs: resolved.audioSpecs,
-        tmpOutputFilePath,
-      });
+      const directClockEligible = hasMediaPipelineContext(args)
+        || process.env.LOUDNORM_GPU_DEFER_EXTERNAL_VERIFY === "1";
+      const directClock = directClockEligible
+        ? await tryDirectClockFinalMux({
+          args,
+          container,
+          inputFile: args.inputFileObj?._id,
+          inputStreams: args.inputFileObj?.ffProbeData?.streams || [],
+          audioSpecs: resolved.audioSpecs,
+          tmpOutputFilePath,
+        })
+        : { used: false };
       if (directClock.used) {
         updateProgress(completedWork + muxWork);
         logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: directClock.wallSec, direct_clock_mux: 1 });

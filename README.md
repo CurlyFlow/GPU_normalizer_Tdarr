@@ -91,15 +91,20 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 | --- | --- | --- |
 | `Add Generated 2-Channel Track` | `true` | Adds normalized generated stereo track(s) according to the 2-channel scope. |
 | `Only Generate 2-Channel For First Language` | `true` | Generates stereo only for the first `Track Order` language (preferring 5.1 over 7.1). Disable to generate for every non-stereo stream/language. |
-| `Track Order` | `eng,en` | Comma-separated language priority (uses source metadata; unlisted languages keep original order). |
-| `Normalize ONLY Languages` | `eng,en` | Comma-separated language filter. Clear or enter `all` to normalize every audio stream. |
-| `Remove Other Languages` | `true` | Deletes audio streams outside `Normalize ONLY Languages`. Disable to copy other languages unchanged. |
-| `Fallback To Undetected Audio` | `true` | Keeps undetected-language streams if no selected language exists; fails safely instead of writing a no-audio file. |
-| `Audio Bitrate` | `192k` | Target AAC audio bitrate. |
-| `Integrated Loudness I` / `LRA` / `TP` | `-18.0` / `7.0` / `-2.0` | Standard `loudnorm` loudness, range, and true-peak targets. |
-| `Max Gain dB` | `15` | Maximum allowed normalization gain. |
-| `Max Concurrent Jobs` | `1` | Guarded GPU job concurrency (`0` disables the guard). |
+| `Track Order` | `eng, en` | Comma-separated language priority for track ordering and generated stereo selection (unlisted languages keep source order). |
+| `Normalize ONLY Languages` | `eng, en` | Comma-separated language filter. Clear or enter `all` / `*` to normalize every audio stream. |
+| `Remove Other Languages` | `false` | Off (default) copies audio streams outside `Normalize ONLY Languages` unchanged. Enable to delete unselected languages. |
+| `Fallback To Undetected Audio` | `true` | Keeps undetected-language (`und`) streams when no selected language exists instead of routing to Output 2. |
+| `Audio Bitrate` | `192k` | Target AAC audio bitrate (release parity and speed are validated at `192k`). |
+| `Prepare Audio For MP4` | `false` | Converts retained MP4-incompatible audio codecs to AAC inside this plugin when a later flow step remuxes to MP4 (keeps container, video, and already-compatible audio unchanged). |
+| `Integrated Loudness I` / `LRA` / `TP` | `-18.0` / `7.0` / `-2.0` | Standard `loudnorm` loudness (LUFS), range (LU), and true-peak (dBTP) targets. |
+| `Max Gain dB` | `15` | Safety gate in dB: streams needing more gain than this are copied unchanged instead of normalized (`0` disables the gate). |
+| `Max Concurrent GPU Tasks` | `1` | Host-wide GPU concurrency limit across running jobs and plugins (`0` disables the guard). |
 | `Debug Logging` | `false` | Enables verbose FFmpeg/runtime logs for troubleshooting. |
+
+**Flow Outputs:**
+- **Output 1:** Output file with normalized/copied audio, optional generated stereo, and preserved video/subtitles/chapters/metadata.
+- **Output 2:** No audio or no selected audio remains (the plugin never deletes files or Tdarr entries; connect a downstream handler if desired).
 
 ---
 

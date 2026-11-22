@@ -11,6 +11,7 @@ const { probeAudioTimelineAsync } = require("./mediaNativeAudioClock");
 const { audioPresentation } = require("./mediaAudioWindow");
 const { planAacClock, encodeClockPlan } = require("./audioClockPlan");
 const { sourceClockTickForPreparation } = require("./pipelinePreparationMap");
+const { snapshotCarrier } = require("./mediaTransportCarrier");
 
 function runProcessAsync(executable, argv, timeoutMs = 900000) {
   return new Promise((resolve, reject) => {
@@ -139,7 +140,8 @@ async function tryDirectClockFinalMux({
     const planPath = path.join(workDir, "clock.txt");
     fs.writeFileSync(planPath, encodeClockPlan(plans), { flag: "wx", mode: 0o600 });
     fs.rmSync(tmpOutputFilePath, { force: true });
-    const muxRes = await runProcessAsync(carrierPath, ["--mux-audio", bundlePath, inputFile, tmpOutputFilePath, planPath]);
+    const carrier = snapshotCarrier(workDir);
+    const muxRes = await runProcessAsync(carrier.snapshot.file, ["--mux-audio", bundlePath, inputFile, tmpOutputFilePath, planPath]);
     if (muxRes.signal || muxRes.code !== 0 || muxRes.stdout) {
       fs.rmSync(tmpOutputFilePath, { force: true });
       return { used: false, reason: muxRes.stderr.trim() || `exit ${muxRes.code}` };
