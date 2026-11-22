@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 
-const MKV_MP4_GENERATED_STREAM_TAG = /^(?:encoder|handler_name|vendor_id|duration|bps|number_of_frames|number_of_bytes|_statistics_(?:writing_app|writing_date_utc|tags))(?:-[a-z]{2,3})?$/;
+const MKV_MP4_GENERATED_STREAM_TAG = /^(?:creation_time|encoder|handler_name|vendor_id|duration|bps|number_of_frames|number_of_bytes|_statistics_(?:writing_app|writing_date_utc|tags))(?:-[a-z]{2,3})?$/;
 
 function tags(value, generated = [], pattern = null) {
   const result = {};
