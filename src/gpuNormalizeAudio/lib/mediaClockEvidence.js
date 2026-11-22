@@ -64,21 +64,36 @@ function videoShift(source, output, comparePixels) {
   try {
     const before = packetEvidence(source), after = packetEvidence(output);
     assert.deepEqual(after.headers, before.headers, 'Video configuration changed');
-    let offset;
+    let offset, pendingDur = null;
+    const matroskaTransformed = !comparePixels
+      && before.base.numerator === 1n && before.base.denominator === 1000n
+      && after.base.numerator === 1n && after.base.denominator === 1000n;
     while (true) {
       const left = before.rows.next(), right = after.rows.next();
       assert.equal(right.done, left.done, 'Video packet count changed');
       if (left.done) break;
       const prior = left.value, next = right.value;
+      if (pendingDur) {
+        assert.equal(BigInt(next[2]), pendingDur.expectedNextPts, 'Video packet duration changed');
+        pendingDur = null;
+      }
       offset ??= subtract(packetTime(next[1], after.base), packetTime(prior[1], before.base));
       assert.equal(next[0], prior[0]);
       assert.equal(next[4], prior[4], 'Video packet/frame size changed');
       if (comparePixels) assert.deepEqual(next.slice(5), prior.slice(5), 'Video packet payload changed');
-      assert.ok(sameTime(packetTime(next[3], after.base), packetTime(prior[3], before.base)), 'Video packet duration changed');
+      const sameDur = sameTime(packetTime(next[3], after.base), packetTime(prior[3], before.base));
+      if (!sameDur) {
+        assert.ok(matroskaTransformed && BigInt(next[3]) > 0n, 'Video packet duration changed');
+        pendingDur = { expectedNextPts: BigInt(next[2]) + BigInt(next[3]), priorDur: BigInt(prior[3]), nextDur: BigInt(next[3]) };
+      }
       for (const field of [1, 2]) {
         assert.ok(sameTime(subtract(packetTime(next[field], after.base), packetTime(prior[field], before.base)), offset),
           'Video DTS/PTS drift');
       }
+    }
+    if (pendingDur) {
+      assert.ok(pendingDur.nextDur - pendingDur.priorDur === 1n || pendingDur.priorDur - pendingDur.nextDur === 1n,
+        'Video packet duration changed');
     }
     return offset;
   } finally {
@@ -123,8 +138,11 @@ function comparePacketPayloads(source, output) {
   }
 }
 
-function decodedAudioTimeline(frames, rate) {
+function decodedAudioTimeline(frames, rate, tick = null) {
   assert.ok(Number.isSafeInteger(rate) && rate > 0, 'Invalid native audio rate');
+  const coarseTick = tick && typeof tick.numerator === 'bigint' && typeof tick.denominator === 'bigint'
+    && tick.numerator > 0n && tick.denominator > 0n
+    && tick.numerator * BigInt(rate) > tick.denominator ? tick : null;
   const segments = [];
   let samples = 0n;
   let previousEnd = null;
@@ -132,7 +150,25 @@ function decodedAudioTimeline(frames, rate) {
     assert.ok(typeof frameSamples === 'bigint' && frameSamples > 0n, 'Invalid decoded audio frame size');
     assert.ok(typeof start.numerator === 'bigint' && typeof start.denominator === 'bigint'
       && start.denominator > 0n, 'Invalid native audio PTS');
-    if (previousEnd === null || !sameTime(start, previousEnd)) {
+    let continuous = false;
+    if (previousEnd !== null) {
+      if (!coarseTick) {
+        continuous = sameTime(start, previousEnd);
+      } else {
+        const current = segments[segments.length - 1];
+        const expected = {
+          numerator: current.start.numerator * BigInt(rate) + (samples - current.samples) * current.start.denominator,
+          denominator: current.start.denominator * BigInt(rate),
+        };
+        const delta = subtract(start, expected);
+        const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
+        // Coarse container timebases (e.g. Matroska 1/1000s) quantize both segment
+        // start and frame PTS onto `coarseTick`. Cumulative anchoring to `current`
+        // prevents drift while keeping real drops/overlaps (> 2 ticks) fatal.
+        continuous = absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
+      }
+    }
+    if (!continuous) {
       assert.ok(segments.length < 100000, 'Too many audio discontinuities');
       segments.push({ samples, start });
     }
@@ -141,7 +177,7 @@ function decodedAudioTimeline(frames, rate) {
     samples += frameSamples;
   }
   assert.ok(samples > 0n, 'Missing decoded audio frames');
-  return { samples, segments, rate };
+  return coarseTick ? { samples, segments, rate, coarseTick } : { samples, segments, rate };
 }
 
 function audioTimeline(lines, channels, rate, sampleBytes) {
@@ -163,13 +199,18 @@ function audioTimeline(lines, channels, rate, sampleBytes) {
   return decodedAudioTimeline(frames(), rate);
 }
 
-function compareAudioTimelines(before, after, offset) {
+function compareAudioTimelines(before, after, offset, expectedDecodedSamples = null) {
     const firstShift = subtract(after.segments[0].start, before.segments[0].start);
     assert.ok(sameTime(firstShift, offset),
       `Audio timeline changed relative to video at first sample: ${firstShift.numerator}/${firstShift.denominator}s, expected ${offset.numerator}/${offset.denominator}s`);
-    assert.ok(sameTime({ numerator: after.samples, denominator: BigInt(after.rate) },
-      { numerator: before.samples, denominator: BigInt(before.rate) }),
-    `Decoded audio timeline duration changed: original=${before.samples}/${before.rate}s candidate=${after.samples}/${after.rate}s`);
+    if (expectedDecodedSamples === null) {
+      assert.ok(sameTime({ numerator: after.samples, denominator: BigInt(after.rate) },
+        { numerator: before.samples, denominator: BigInt(before.rate) }),
+      `Decoded audio timeline duration changed: original=${before.samples}/${before.rate}s candidate=${after.samples}/${after.rate}s`);
+    } else {
+      assert.equal(after.samples, expectedDecodedSamples,
+        `Normalized audio decoded samples differ: expected=${expectedDecodedSamples} candidate=${after.samples}`);
+    }
     const describe = timeline => JSON.stringify(timeline.segments.slice(0, 8).map(segment => ({
       sample: String(segment.samples), rate: timeline.rate,
       pts: `${segment.start.numerator}/${segment.start.denominator}`,

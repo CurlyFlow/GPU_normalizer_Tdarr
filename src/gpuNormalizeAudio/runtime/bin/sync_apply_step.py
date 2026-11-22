@@ -94,6 +94,8 @@ def run_sync_apply_step(ctx, result, state):
         borrowed_output=state.borrowed_output,
         this_frames=apply_chunk.this_frames,
         frame_offset=state.frame_offset,
+        swr_downsampler=state.swr_downsampler,
+        is_final=(state.frame_offset + apply_chunk.this_frames >= cfg.input_shape.total_frames),
     )
     state.done_bytes += apply_chunk.this_bytes
     state.frame_offset += apply_chunk.this_frames

@@ -71,6 +71,8 @@ KERNEL_ARG_BUILDERS = {
     'short_source_filter_f64_kernel': 'build_short_filter_args',
     'short_source_gain_f64_kernel': 'build_short_gain_args',
     'short_source_apply_f64_kernel': 'build_short_apply_args',
+    'swr_downsample_192k_to_96k_f32_kernel': 'build_swr_downsample_192k_to_96k_args',
+    'swr_upsample_48k_to_192k_f32_to_f64_kernel': 'build_swr_upsample_48k_to_192k_args',
     'apply_linear_f64_io_kernel': 'build_linear_apply_args',
     'apply_plan_f64_io_ffmpeg_feedback_limiter_stream_kernel': 'build_exact_feedback_apply_args',
     'apply_plan_f64_io_ffmpeg_timing_final_kernel': 'build_ffmpeg_timing_apply_args',

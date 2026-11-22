@@ -63,8 +63,11 @@ def prepare_sync_apply_chunk(ctx, result, fi, exact_stream_window, *, done_bytes
                 input_frames = max(input_frames, source_needed_end - input_base_frame)
         copy_input_bytes = None
         if cfg.root.streaming_io:
-            input_bytes = exact_stream_window.stage(input_base_frame, input_frames)
-            copy_input_bytes = input_bytes
+            if hasattr(exact_stream_window, 'stage_to_device'):
+                copy_input_bytes = exact_stream_window.stage_to_device(ctx, result, input_base_frame, input_frames)
+            else:
+                input_bytes = exact_stream_window.stage(input_base_frame, input_frames)
+                copy_input_bytes = input_bytes
         else:
             input_bytes = input_frames * cfg.sizing.frame_bytes
             if input_bytes > len(host_in):

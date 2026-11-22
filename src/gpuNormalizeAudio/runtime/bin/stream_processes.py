@@ -1,9 +1,31 @@
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 from runtime_env import env_optional_bytes_mib
+
+
+def _stage_private_encode_binary(encode_command):
+    if not encode_command:
+        return encode_command, None
+    exe = str(encode_command[0])
+    if os.path.basename(exe) != 'aac_encode_mt' or not os.path.isfile(exe):
+        return encode_command, None
+    fd, staged = tempfile.mkstemp(prefix='.opx-aac-encode-mt-')
+    try:
+        with os.fdopen(fd, 'wb') as dst, open(exe, 'rb') as src:
+            shutil.copyfileobj(src, dst, length=262144)
+        os.chmod(staged, 0o700)
+    except Exception:
+        try:
+            os.unlink(staged)
+        except OSError:
+            pass
+        raise
+    return [staged, *encode_command[1:]], staged
 
 
 class NullEncodeSink:
@@ -76,10 +98,18 @@ def start_encode_pass(args, streaming_io, encode_command):
     pipesize = env_optional_bytes_mib('LOUDNORM_GPU_ENCODE_PIPE_MIB')
     if pipesize is not None:
         popen_kwargs['pipesize'] = pipesize
+    launch_command, staged_bin = _stage_private_encode_binary(encode_command)
     try:
-        proc = subprocess.Popen(encode_command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=sys.stderr, **popen_kwargs)
-    except (OSError, TypeError, PermissionError):
-        proc = subprocess.Popen(encode_command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=sys.stderr)
+        try:
+            proc = subprocess.Popen(launch_command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=sys.stderr, **popen_kwargs)
+        except (OSError, TypeError, PermissionError):
+            proc = subprocess.Popen(launch_command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=sys.stderr)
+    finally:
+        if staged_bin:
+            try:
+                os.unlink(staged_bin)
+            except OSError:
+                pass
     if proc.stdin is None:
         raise RuntimeError('encode failed to open stdin')
     return proc, proc.stdin

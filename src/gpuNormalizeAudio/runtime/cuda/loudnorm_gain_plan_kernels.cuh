@@ -16,8 +16,14 @@ extern "C" __global__ void source_port_gain_kernel(
     unsigned int linear_mode
 ) {
     if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    unsigned int hist[1000];
-    for (int i = 0; i < 1000; i++) hist[i] = 0;
+    __shared__ unsigned int hist[1000];
+    __shared__ double energies_s[1000];
+    __shared__ unsigned int nz_mask[32];
+    for (int i = 0; i < 1000; i++) {
+        hist[i] = 0;
+        energies_s[i] = hist_energies[i];
+    }
+    for (int w = 0; w < 32; w++) nz_mask[w] = 0U;
     const double weights[21] = {
         0.0019290645132252328,
         0.0041893491230893792,
@@ -83,7 +89,11 @@ extern "C" __global__ void source_port_gain_kernel(
         short_index = (short_index + 1) % 30;
         if (t >= 3) {
             double e = ((double)window_sums[t] + (double)window_sums[t - 1] + (double)window_sums[t - 2] + (double)window_sums[t - 3]) / (double)(frames_per_window * 4);
-            if (e >= hist_boundaries[0]) hist[hist_index_from_boundaries_dev(e, hist_boundaries)]++;
+            if (e >= hist_boundaries[0]) {
+                int bin = hist_index_from_boundaries_dev(e, hist_boundaries);
+                hist[bin]++;
+                nz_mask[bin >> 5] |= (1U << (bin & 31));
+            }
         }
     }
 
@@ -129,11 +139,16 @@ extern "C" __global__ void source_port_gain_kernel(
         short_sum += (double)window_sums[t];
         short_index = (short_index + 1) % 30;
         double e = ((double)window_sums[t] + (double)window_sums[t - 1] + (double)window_sums[t - 2] + (double)window_sums[t - 3]) / (double)(frames_per_window * 4);
-        if (e >= hist_boundaries[0]) hist[hist_index_from_boundaries_dev(e, hist_boundaries)]++;
+        if (e >= hist_boundaries[0]) {
+            int bin = hist_index_from_boundaries_dev(e, hist_boundaries);
+            hist[bin]++;
+            nz_mask[bin >> 5] |= (1U << (bin & 31));
+        }
 
-        const double global = gated_loudness_lut_boundaries_dev(hist, hist_energies, hist_boundaries);
+        double global;
+        double relative_threshold;
+        gated_and_relative_loudness_nz_dev(hist, energies_s, hist_boundaries, nz_mask, &global, &relative_threshold);
         shortterm = energy_to_loudness_dev(short_sum / (double)(frames_per_window * 30));
-        const double relative_threshold = relative_threshold_lut_dev(hist, hist_energies);
         if (above_threshold == 0) {
             double shortterm_out = energy_to_loudness_dev(out_short_sum / (double)(frames_per_window * 30));
             if (shortterm > measured_thresh) prev_delta *= 1.0058;
@@ -175,17 +190,27 @@ extern "C" __global__ void source_port_metrics_kernel(
     const double *hist_boundaries
 ) {
     if (blockIdx.x != 0 || threadIdx.x != 0) return;
-    unsigned int hist[1000];
-    for (int i = 0; i < 1000; i++) hist[i] = 0;
+    __shared__ unsigned int hist[1000];
+    __shared__ double energies_s[1000];
+    __shared__ unsigned int nz_mask[32];
+    for (int i = 0; i < 1000; i++) {
+        hist[i] = 0;
+        energies_s[i] = hist_energies[i];
+    }
+    for (int w = 0; w < 32; w++) nz_mask[w] = 0U;
 
     for (unsigned int t = 3; t < windows; t++) {
         double energy = ((double)window_sums[t] + (double)window_sums[t - 1] + (double)window_sums[t - 2] + (double)window_sums[t - 3]) / (double)(frames_per_window * 4);
         if (energy >= hist_boundaries[0]) {
-            hist[hist_index_from_boundaries_dev(energy, hist_boundaries)]++;
+            int bin = hist_index_from_boundaries_dev(energy, hist_boundaries);
+            hist[bin]++;
+            nz_mask[bin >> 5] |= (1U << (bin & 31));
         }
     }
 
-    double input_i = gated_loudness_lut_boundaries_dev(hist, hist_energies, hist_boundaries);
+    double input_i;
+    double unused_rel_thresh;
+    gated_and_relative_loudness_nz_dev(hist, energies_s, hist_boundaries, nz_mask, &input_i, &unused_rel_thresh);
     float gain_min = windows > 0 ? gains[0] : 1.0f;
     float gain_max = windows > 0 ? gains[0] : 1.0f;
     for (unsigned int i = 1; i < windows; i++) {

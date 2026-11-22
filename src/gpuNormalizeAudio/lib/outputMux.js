@@ -13,6 +13,7 @@ const {
   pushBasePackageMaps,
   pushContainerCopyCodecs,
   pushMp4TrueHdOutputArgs,
+  pushPreservedVideoTimescaleArgs,
   pushOutputAudioCodecs,
   pushOutputAudioMetadata,
   sourceAudioSpec,
@@ -38,6 +39,7 @@ function buildCopyOriginalCommand({
   const copiedTrueHdStreams = pushOutputAudioCodecs(copyArgs, resolvedAudioSpecs, { audioBitrate, container });
   pushOutputAudioMetadata(copyArgs, resolvedAudioSpecs, inputStreams);
   pushMp4TrueHdOutputArgs(copyArgs, container, copiedTrueHdStreams);
+  pushPreservedVideoTimescaleArgs(copyArgs, container, inputStreams);
   copyArgs.push(tmpOutputFilePath);
   return renderShellCommand(copyArgs);
 }
@@ -65,6 +67,7 @@ function buildFinalMuxCommand({
   const copiedTrueHdStreams = pushOutputAudioCodecs(muxArgs, resolvedAudioSpecs, { audioBitrate, container });
   pushOutputAudioMetadata(muxArgs, resolvedAudioSpecs, inputStreams);
   pushMp4TrueHdOutputArgs(muxArgs, container, copiedTrueHdStreams);
+  pushPreservedVideoTimescaleArgs(muxArgs, container, inputStreams);
   if (movieTimescale !== null) muxArgs.push("-movie_timescale", String(exactMovieTimescale([movieTimescale])));
   muxArgs.push(tmpOutputFilePath);
   return renderShellCommand(muxArgs);
@@ -127,6 +130,7 @@ function buildDirectMuxCommand({
     encodeThreadArgs,
   });
   pushMp4TrueHdOutputArgs(directMuxArgs, container, copiedTrueHdStreams);
+  pushPreservedVideoTimescaleArgs(directMuxArgs, container, inputStreams);
   pushOutputAudioMetadata(directMuxArgs, audioSpecs, inputStreams);
   directMuxArgs.push(tmpOutputFilePath);
   return renderShellCommand(directMuxArgs);

@@ -14,7 +14,21 @@ const { verifyAudioOutputClock } = require("./audioOutputClock");
 const { observeAudioOutputValues, verifyAudioOutputValues } = require("./audioOutputValues");
 const { bindAudioHandoff } = require("./mediaAudioHandoff");
 const { transportAudioOutput } = require("./audioOutputTransport");
+const { maybeRetainNormalizedEofContext } = require("./mediaAudioEofContext");
 const { gainSkippedStereoCommand } = require("./audioGainPolicy");
+const { tryDirectClockFinalMux } = require("./finalClockMux");
+
+function hasMediaPipelineContext(args) {
+  return Boolean(
+    args?.variables?.mediaPipeline
+    || args?.variables?.mediaPipelinePreparation
+    || args?.variables?.mediaPipelinePreparationEvidence,
+  );
+}
+
+function externalVerifyDeferred(args) {
+  return !hasMediaPipelineContext(args);
+}
 
 async function publishOutputPackage({
   args,
@@ -31,6 +45,8 @@ async function publishOutputPackage({
   observeValues,
   verifyValues,
   transportAudio,
+  retainEofContext,
+  requireCpuAudit = false,
   verifyLabel = "validate GPU normalize output streams",
 }) {
   const transaction = {
@@ -46,22 +62,40 @@ async function publishOutputPackage({
     outputPath: tmpOutputFilePath,
   }), { label: verifyLabel });
   validateOutputStreams(outputContract, parseOutputProbe(verifyRes.output));
-  const valueBasis = await observeValues(args, tmpOutputFilePath, audioSpecs, outputContract);
-  const transported = await transportAudio(args, tmpOutputFilePath, audioSpecs, outputContract);
-  if (transported !== tmpOutputFilePath) {
-    tmpOutputFilePath = transported;
-    transaction.tmpOutputFilePath = transported;
-    const transportProbe = await runChecked(buildOutputProbeCommand({ ffmpegPath, outputPath: transported }),
-      { label: "validate transported package streams" });
-    validateOutputStreams(outputContract, parseOutputProbe(transportProbe.output));
+  const externalComparator = !hasMediaPipelineContext(args) && process.env.LOUDNORM_GPU_DEFER_EXTERNAL_VERIFY === "1";
+  const deferVerify = externalComparator || (!requireCpuAudit && externalVerifyDeferred(args));
+  let valueBasis = null;
+  let eofContext = null;
+  if (deferVerify) {
+    if (externalComparator) {
+      args.jobLog("GPU normalize deferred post-publish verification to external comparator.");
+      args.variables = { ...args.variables, gpuNormalizeExternalVerifyDeferred: true };
+    } else {
+      args.jobLog("GPU normalize standalone mode: output stream validation enabled (CPU reference audit off).");
+    }
+  } else {
+    valueBasis = await observeValues(args, tmpOutputFilePath, audioSpecs, outputContract);
+    eofContext = retainEofContext(args, { valueBasis, candidateFile: tmpOutputFilePath });
   }
-  await verifyAudioOutputClock(args, tmpOutputFilePath, audioSpecs, outputContract);
-  await verifyValues(args, tmpOutputFilePath, audioSpecs, outputContract, valueBasis);
+  if (!deferVerify || externalComparator) {
+    const transported = await transportAudio(args, tmpOutputFilePath, audioSpecs, outputContract, eofContext);
+    if (transported !== tmpOutputFilePath) {
+      tmpOutputFilePath = transported;
+      transaction.tmpOutputFilePath = transported;
+      const transportProbe = await runChecked(buildOutputProbeCommand({ ffmpegPath, outputPath: transported }),
+        { label: "validate transported package streams" });
+      validateOutputStreams(outputContract, parseOutputProbe(transportProbe.output));
+    }
+  }
+  if (!deferVerify) {
+    await verifyAudioOutputClock(args, tmpOutputFilePath, audioSpecs, outputContract, eofContext);
+    await verifyValues(args, tmpOutputFilePath, audioSpecs, outputContract, valueBasis);
+  }
   transaction.verifyTmp = "done";
   transaction.state = "publish";
   logProfileStage(args, { scope: "plugin", name: "verify_output", wall_sec: verifyRes.wallSec });
   const publishRes = await runChecked(`mv -f ${q(tmpOutputFilePath)} ${q(outputFilePath)}`, { label: publishLabel });
-  bindAudioHandoff(args, tmpOutputFilePath, outputFilePath);
+  if (!deferVerify) bindAudioHandoff(args, tmpOutputFilePath, outputFilePath);
   transaction.publish = "done";
   transaction.state = "cleanup";
   logProfileStage(args, { scope: "plugin", name: "publish_output", wall_sec: publishRes.wallSec });
@@ -81,9 +115,9 @@ async function publishOutputPackage({
 }
 
 function createOutputFinalizer({ model, runtimeContext, observeValues = observeAudioOutputValues, verifyValues = verifyAudioOutputValues,
-  transportAudio = transportAudioOutput }) {
+  transportAudio = transportAudioOutput, retainEofContext = maybeRetainNormalizedEofContext, requireCpuAudit = false }) {
   const { args, pluginStartedAt } = model.core;
-  const { durationSeconds, tmpOutputFilePath, outputFilePath } = model.runtimeConfig.outputPathConfig;
+  const { durationSeconds, audioCompatibilityContainer: container, tmpOutputFilePath, outputFilePath } = model.runtimeConfig.outputPathConfig;
   const {
     buildMux, cleanupAll, finalAudioSpecs,
     audioPlans, skippedAudioPlans, removedAudioPlans = [], finalOutputContract, updateProgress,
@@ -108,14 +142,30 @@ function createOutputFinalizer({ model, runtimeContext, observeValues = observeA
     if (directMuxCompleted) {
       logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: 0, direct_paired: 1 });
     } else {
-      const muxRes = await runChecked(resolved.buildMux(), {
-        label: "mux normalized audio streams",
-        parseLine: (line) => {
-          const fraction = ffmpegProgressFraction(line, durationSeconds);
-          if (fraction !== null) updateProgress(completedWork + muxWork * fraction);
-        },
+      const directClock = await tryDirectClockFinalMux({
+        args,
+        container,
+        inputFile: args.inputFileObj?._id,
+        inputStreams: args.inputFileObj?.ffProbeData?.streams || [],
+        audioSpecs: resolved.audioSpecs,
+        tmpOutputFilePath,
       });
-      logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: muxRes.wallSec });
+      if (directClock.used) {
+        updateProgress(completedWork + muxWork);
+        logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: directClock.wallSec, direct_clock_mux: 1 });
+      } else {
+        if (directClock.reason && args.inputs?.debugLogging) {
+          args.jobLog(`GPU normalize direct clock mux skipped (${directClock.reason}); using standard final mux.`);
+        }
+        const muxRes = await runChecked(resolved.buildMux(), {
+          label: "mux normalized audio streams",
+          parseLine: (line) => {
+            const fraction = ffmpegProgressFraction(line, durationSeconds);
+            if (fraction !== null) updateProgress(completedWork + muxWork * fraction);
+          },
+        });
+        logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: muxRes.wallSec });
+      }
     }
     return await publishOutputPackage({
       args,
@@ -131,6 +181,8 @@ function createOutputFinalizer({ model, runtimeContext, observeValues = observeA
       observeValues,
       verifyValues,
       transportAudio,
+      retainEofContext,
+      requireCpuAudit,
     });
   };
 
@@ -142,4 +194,5 @@ function createOutputFinalizer({ model, runtimeContext, observeValues = observeA
 
 module.exports = {
   createOutputFinalizer,
+  externalVerifyDeferred,
 };

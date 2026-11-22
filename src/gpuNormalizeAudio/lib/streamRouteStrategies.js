@@ -33,7 +33,7 @@ function boundedFraction(name, fallback) {
 }
 
 function parallelSerialFallbackStartDelayMs() {
-  return boundedDelayMs("LOUDNORM_GPU_PARALLEL_SERIAL_FALLBACK_START_DELAY_MS", 24000);
+  return boundedDelayMs("LOUDNORM_GPU_PARALLEL_SERIAL_FALLBACK_START_DELAY_MS", 0);
 }
 
 function parallelSerialFallbackStartOriginalProgress() {
@@ -45,7 +45,7 @@ function parallelSerialFallbackApplyDelayMs() {
 }
 
 function prefetchDelayedFallbackMeasure(gpuFirstPassOriginalOnly) {
-  return envFlag("LOUDNORM_GPU_PARALLEL_SERIAL_PREFETCH_DELAYED_FALLBACK_MEASURE")
+  return envFlag("LOUDNORM_GPU_PARALLEL_SERIAL_PREFETCH_DELAYED_FALLBACK_MEASURE", true)
     && gpuFirstPassOriginalOnly;
 }
 

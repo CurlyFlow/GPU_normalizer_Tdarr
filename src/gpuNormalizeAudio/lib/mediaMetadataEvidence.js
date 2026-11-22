@@ -2,11 +2,13 @@
 
 const assert = require("node:assert/strict");
 
-function tags(value, generated = []) {
+const MKV_MP4_GENERATED_STREAM_TAG = /^(?:encoder|handler_name|vendor_id|duration|bps|number_of_frames|number_of_bytes|_statistics_(?:writing_app|writing_date_utc|tags))(?:-[a-z]{2,3})?$/;
+
+function tags(value, generated = [], pattern = null) {
   const result = {};
   for (const [raw, text] of Object.entries(value || {})) {
     const key = raw.toLowerCase();
-    if (generated.includes(key)) continue;
+    if (generated.includes(key) || (pattern && pattern.test(key))) continue;
     if (Object.hasOwn(result, key)) throw Error("Ambiguous metadata tag casing");
     result[key] = String(text);
   }
@@ -43,18 +45,47 @@ function verifyMetadataCarriers(before, after, offset) {
   return { status: "pass", chapters: source.length, globalTags: Object.keys(tags(before.format?.tags, generated)) };
 }
 
-function verifyStreamMetadata(source, candidate, transformed = false) {
-  const before = tags(source.tags, transformed ? ["encoder"] : []), after = tags(candidate.tags, transformed ? ["encoder"] : []);
+function verifyDisposition(source, candidate, containerPromotion) {
+  if (!containerPromotion) {
+    assert.deepEqual(candidate.disposition, source.disposition, "Retained stream disposition changed");
+    return;
+  }
+  const before = source.disposition || {}, after = candidate.disposition || {};
+  assert.deepEqual(Object.keys(after).sort(), Object.keys(before).sort(), "Retained stream disposition changed");
+  for (const key of Object.keys(before)) {
+    if (after[key] === before[key]) continue;
+    if (key === "default" && before[key] === 0 && after[key] === 1) continue;
+    if (key === "captions" && before.hearing_impaired === 1 && before[key] === 0 && after[key] === 1) continue;
+    throw Error("Retained stream disposition changed");
+  }
+}
+
+function verifyStreamMetadata(source, candidate, transformed = false, options = {}) {
+  const generated = transformed ? ["encoder"] : [];
+  const pattern = options.containerPromotion ? MKV_MP4_GENERATED_STREAM_TAG : null;
+  const before = tags(source.tags, generated, pattern), after = tags(candidate.tags, generated, pattern);
   // FFmpeg represents an unspecified language either as absent or `und`.
   before.language ||= "und";
   after.language ||= "und";
   assert.deepEqual(after, before, "Retained stream metadata changed");
-  assert.deepEqual(candidate.disposition, source.disposition, "Retained stream disposition changed");
+  verifyDisposition(source, candidate, Boolean(options.containerPromotion));
 }
 
-function verifyCopiedStreamProperties(source, candidate) {
-  const properties = ["codec_type", "codec_name", "profile", "width", "height", "pix_fmt", "sample_aspect_ratio", "field_order",
-    "color_range", "color_space", "color_transfer", "color_primaries", "chroma_location", "side_data_list",
+function isSynthesizedAudioServiceSideData(source, candidate, containerPromotion) {
+  return Boolean(containerPromotion && source.codec_type === "audio"
+    && ["ac3", "eac3"].includes(source.codec_name)
+    && !(source.side_data_list || []).length
+    && Array.isArray(candidate.side_data_list) && candidate.side_data_list.length > 0
+    && candidate.side_data_list.every(item => item?.side_data_type === "Audio Service Type"));
+}
+
+function verifyCopiedStreamProperties(source, candidate, options = {}) {
+  const promotedSubtitle = options.containerPromotion && source.codec_type === "subtitle"
+    && ["subrip", "ass"].includes(source.codec_name) && candidate.codec_name === "mov_text";
+  const synthesizedAudioSideData = isSynthesizedAudioServiceSideData(source, candidate, options.containerPromotion);
+  const properties = ["codec_type", ...(promotedSubtitle ? [] : ["codec_name"]), "profile", "width", "height", "pix_fmt", "sample_aspect_ratio", "field_order",
+    "color_range", "color_space", "color_transfer", "color_primaries", "chroma_location",
+    ...(synthesizedAudioSideData ? [] : ["side_data_list"]),
     "channels", "channel_layout", "sample_rate", "sample_fmt"];
   assert.deepEqual(properties.map(key => candidate[key] ?? null), properties.map(key => source[key] ?? null),
     "Copied stream native configuration or HDR carrier changed");

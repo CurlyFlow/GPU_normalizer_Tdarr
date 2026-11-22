@@ -2,6 +2,8 @@
 
 const path = require("node:path");
 const { fileDigest } = require("./mediaEvidenceFiles");
+const { validateReceipt } = require("./mediaClockProtocol");
+const { inspectMedia } = require("./mediaSourceProbe");
 
 function streams(file) {
   const values = file.ffProbeData?.streams;
@@ -35,9 +37,13 @@ function bindPreparationMap(source, prepared, retainedIndices, originalId) {
     throw Error("Preparation selection changes the source stream order");
   }
   if (selected.length !== after.length) throw Error("Prepared stream count differs from its explicit selection");
+  const promotedMkv = path.extname(source._id).toLowerCase() === ".mkv"
+    && path.extname(prepared._id).toLowerCase() === ".mp4";
   const mapping = selected.map((stream, index) => {
     const actual = after[index];
-    if (actual.codec_type !== stream.codec_type || actual.codec_name !== stream.codec_name
+    const promotedSub = promotedMkv && stream.codec_type === "subtitle"
+      && ["subrip", "ass"].includes(stream.codec_name) && actual.codec_name === "mov_text";
+    if (actual.codec_type !== stream.codec_type || (!promotedSub && actual.codec_name !== stream.codec_name)
         || (["audio", "subtitle"].includes(stream.codec_type) && language(actual) !== language(stream))
         || (stream.codec_type === "audio" && (actual.channels !== stream.channels
           || String(actual.sample_rate) !== String(stream.sample_rate)))) {
@@ -104,4 +110,49 @@ function requirePreparationMap(args, contract) {
   return value;
 }
 
-module.exports = { bindPreparationMap, requirePreparationMap };
+function preparationVideoMap(mapping) {
+  return mapping.streams.filter(stream => stream.type === "video")
+    .map(stream => ({ sourceIndex: stream.sourceOrdinal, candidateIndex: stream.preparedOrdinal }));
+}
+
+function requirePreparationEvidence(args, contract) {
+  const mapping = requirePreparationMap(args, contract);
+  const receipt = args.variables.mediaPipelinePreparationEvidence;
+  const selected = mapping.streams.filter(stream => stream.type === "audio");
+  if (!receipt || receipt.status !== "pass" || receipt.sourceFile !== mapping.originalId
+      || receipt.candidateFile !== mapping.preparedId || !Array.isArray(receipt.audioMap)
+      || receipt.audioMap.length !== selected.length || receipt.audioMap.some((map, index) => {
+        const stream = selected[index];
+        return map.id !== `prepare-a${index}` || map.sourceIndex !== stream.sourceOrdinal
+          || map.candidateIndex !== stream.preparedOrdinal || map.compareSamples !== true || map.sampleBytes !== 8;
+      })) throw Error("Missing or foreign preparation content/clock proof");
+  validateReceipt(receipt, { sourceFile: mapping.originalId, candidateFile: mapping.preparedId,
+    audioMap: receipt.audioMap, videoMap: preparationVideoMap(mapping) });
+  return receipt;
+}
+
+function sourceClockTickForFile(file, ffprobeExec) {
+  const media = inspectMedia(file, ffprobeExec);
+  if (!String(media.format?.format_name || "").split(",").includes("matroska")) return null;
+  const audio = media.streams.filter(stream => stream.codec_type === "audio");
+  for (const stream of audio) {
+    const match = String(stream.time_base || "").match(/^([1-9]\d{0,9})\/([1-9]\d{0,9})$/);
+    const rate = Number(stream.sample_rate);
+    if (match && Number.isSafeInteger(rate) && rate > 0 && BigInt(match[1]) * BigInt(rate) > BigInt(match[2])) {
+      return { numerator: match[1], denominator: match[2] };
+    }
+  }
+  return null;
+}
+
+function sourceClockTickForPreparation(args, ffprobeExec) {
+  if (!args.variables?.mediaPipeline || !args.originalLibraryFile?._id || !args.inputFileObj?._id) return null;
+  if (args.originalLibraryFile._id === args.inputFileObj._id) return null;
+  requirePreparationEvidence(args, { originalId: args.originalLibraryFile._id, preparedId: args.inputFileObj._id });
+  return sourceClockTickForFile(args.originalLibraryFile._id, ffprobeExec);
+}
+
+module.exports = {
+  bindPreparationMap, requirePreparationMap, preparationVideoMap,
+  requirePreparationEvidence, sourceClockTickForFile, sourceClockTickForPreparation,
+};

@@ -15,6 +15,50 @@ def build_short_apply_args(input_arg, output_arg, gain_arg, samples_arg):
     return (ctypes.c_void_p * 4)(ptr_arg(input_arg), ptr_arg(output_arg), ptr_arg(gain_arg), ptr_arg(samples_arg))
 
 
+def build_swr_downsample_192k_to_96k_args(
+    input_arg,
+    filter_arg,
+    output_arg,
+    window_start_frame_arg,
+    total_source_frames_arg,
+    output_start_frame_arg,
+    output_count_arg,
+    channels_arg,
+):
+    return (ctypes.c_void_p * 8)(
+        ptr_arg(input_arg),
+        ptr_arg(filter_arg),
+        ptr_arg(output_arg),
+        ptr_arg(window_start_frame_arg),
+        ptr_arg(total_source_frames_arg),
+        ptr_arg(output_start_frame_arg),
+        ptr_arg(output_count_arg),
+        ptr_arg(channels_arg),
+    )
+
+
+def build_swr_upsample_48k_to_192k_args(
+    input_arg,
+    filter_arg,
+    output_arg,
+    window_start_in_frame_arg,
+    total_in_frames_arg,
+    output_start_frame_arg,
+    output_count_arg,
+    channels_arg,
+):
+    return (ctypes.c_void_p * 8)(
+        ptr_arg(input_arg),
+        ptr_arg(filter_arg),
+        ptr_arg(output_arg),
+        ptr_arg(window_start_in_frame_arg),
+        ptr_arg(total_in_frames_arg),
+        ptr_arg(output_start_frame_arg),
+        ptr_arg(output_count_arg),
+        ptr_arg(channels_arg),
+    )
+
+
 def build_exact_sums_args(in_arg, sums_arg, exact_sums_state_i_arg, exact_sums_state_d_arg, frames_arg, channels_arg, frame_window_arg, b_arg, a_arg):
     return (ctypes.c_void_p * 9)(ptr_arg(in_arg), ptr_arg(sums_arg), ptr_arg(exact_sums_state_i_arg), ptr_arg(exact_sums_state_d_arg), ptr_arg(frames_arg), ptr_arg(channels_arg), ptr_arg(frame_window_arg), ptr_arg(b_arg), ptr_arg(a_arg))
 

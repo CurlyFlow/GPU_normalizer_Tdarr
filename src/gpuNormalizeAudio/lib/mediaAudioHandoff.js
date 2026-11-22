@@ -3,9 +3,9 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert/strict");
-const { fileDigest, sameFileGeneration, retainedReceipt, writePrivateReceipt } = require("./mediaEvidenceFiles");
+const { fileDigest, sameFileGeneration, readRetainedReceipt, retainedReceipt, writePrivateReceipt } = require("./mediaEvidenceFiles");
 const { validateReceipt } = require("./mediaClockProtocol");
-const { validateValueReceipt } = require("./mediaAudioValueProtocol");
+const { CPU_PLUGIN_SHA256, validateValueReceipt } = require("./mediaAudioValueProtocol");
 const { createAudioSelectionIntent } = require("./audioValueSelection");
 const { inspectStreams } = require("./mediaSourceProbe");
 const { decoderIdentity } = require("./mediaEvidenceTools");
@@ -13,12 +13,16 @@ const { requireStageProducer } = require("./mediaStageProducer");
 const { requireAudioTransport } = require("./mediaAudioTransportAdmission");
 const { requireAudioValueBasis } = require("./mediaAudioValueBasis");
 const { audioReferenceInputs } = require("./mediaAudioReference");
+const { validateNormalizedEofContext } = require("./mediaAudioEofContext");
+const { sourceClockTickForPreparation } = require("./pipelinePreparationMap");
 
 function bindAudioHandoff(args, temporary, output) {
   try {
     const clock = args.variables.gpuNormalizeAudioClock, values = args.variables.gpuNormalizeAudioValues;
     validateReceipt(clock, { sourceFile: args.inputFileObj._id, candidateFile: temporary,
-      audioMap: clock.audioMap, videoMap: clock.videoMap });
+      audioMap: clock.audioMap, videoMap: clock.videoMap,
+      ...(clock.eofContext ? { eofContext: clock.eofContext } : {}),
+      ...(clock.sourceClockTick ? { sourceClockTick: clock.sourceClockTick } : {}) });
     validateValueReceipt(values, values.request);
     if (clock.status !== "pass" || values.status !== "pass" || values.request.sourceFile !== clock.sourceFile
         || values.request.candidateFile !== temporary || values.inputs.length !== clock.inputs.length
@@ -56,18 +60,30 @@ function bindAudioHandoff(args, temporary, output) {
         throw Error("Audio comparison reference changed before handoff");
       }
     }
+    const expectedTick = sourceClockTickForPreparation(args, (values.prober.native || values.prober).executable);
+    assert.deepEqual(clock.sourceClockTick ?? null, expectedTick, "Audio clock source tick differs from preparation");
     const transport = args.variables.gpuNormalizeAudioTransport;
     const transportBinding = transport ? retainedReceipt(transport) : null;
-    if (Object.hasOwn(values.request, "basis")) {
+    if (Object.hasOwn(values.request, "basis") || clock.eofContext) {
+      assert.ok(Object.hasOwn(values.request, "basis"), "Normalized EOF handoff requires the first-candidate value basis");
       const verified = requireAudioTransport({ source, candidate, temporary, transport: transportBinding }, clock,
         { decoder: values.decoder, prober: values.prober });
       assert.deepEqual(verified.output.identity, values.inputs.find(input => input.file === temporary).identity);
       requireAudioValueBasis(values, verified.inputs.find(input => input.file === verified.request.candidateFile),
         { from: temporary, to: output });
+      if (clock.eofContext) {
+        const eof = validateNormalizedEofContext(readRetainedReceipt(clock.eofContext), {
+          args, candidateFile: verified.request.candidateFile,
+          expectedPluginSha256: values.request.plugin?.sha256 || CPU_PLUGIN_SHA256,
+          renamed: { from: temporary, to: output },
+        });
+        assert.deepEqual(eof.valueBasis, values.request.basis, "Normalized EOF basis differs from final values");
+      }
     }
     const receipt = writePrivateReceipt(path.dirname(output), "media-handoff", {
       schema: "media-audio-handoff.v2", scope: "configured-selection-and-verified-audio-rename", status: "pass",
-      source, candidate, temporary, selection, evidence, transport: transportBinding });
+      source, candidate, temporary, selection, evidence, transport: transportBinding,
+      ...(clock.eofContext ? { eofContext: clock.eofContext } : {}) });
     args.variables.gpuNormalizeAudioHandoff = receipt;
     return receipt;
   } catch (error) {

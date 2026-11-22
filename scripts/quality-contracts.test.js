@@ -90,9 +90,18 @@ function ownersOf(root, extension, pattern) {
 }
 
 test("every checked JavaScript tree is acyclic", () => {
-  const releaseBase = path.join(repoRoot, "FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio");
-  const release = fs.readdirSync(releaseBase).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
-  for (const root of [path.join(releaseBase, release), sourceRoot].filter(fs.existsSync)) {
+  const candidates = [
+    "FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio",
+    "FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio",
+  ].flatMap((rel) => {
+    const base = path.join(repoRoot, rel);
+    if (!fs.existsSync(base)) return [];
+    return fs.readdirSync(base, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => ({ version: entry.name, dir: path.join(base, entry.name) }));
+  }).sort((a, b) => a.version.localeCompare(b.version, undefined, { numeric: true }));
+  const latestReleaseDir = candidates.at(-1)?.dir;
+  for (const root of [latestReleaseDir, sourceRoot].filter((dir) => dir && fs.existsSync(dir))) {
     const files = filesBelow(root, ".js");
     const graph = new Map(files.map((file) => [file, []]));
     for (const file of files) {

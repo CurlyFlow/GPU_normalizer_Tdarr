@@ -6,6 +6,7 @@ from feedback_apply import (
     parallel_unsafe_feedback_status,
     segmented_safe_feedback_status,
 )
+from runtime_env import env_flag
 
 
 class FeedbackApplyMode(Enum):
@@ -42,12 +43,22 @@ def can_prefix_skip_safe_feedback(ctx, apply_chunk, feedback_state_i_host):
     )
 
 
+def parallel_skip_before_threshold_6ch_enabled(cfg, args):
+    return (
+        args.channels == 6
+        and cfg.exact.exact_safe_feedback_slot_accum
+        and env_flag('LOUDNORM_GPU_PARALLEL_SKIP_BEFORE_THRESHOLD_6CH', True)
+    )
+
+
 def can_parallel_skip_safe_feedback(ctx, apply_chunk, feedback_state_i_host):
     cfg = ctx.cfg
     args = ctx.args
     state = feedback_state_i_view(feedback_state_i_host)
     threshold_ready = state.enabled('above_threshold')
     if cfg.exact.source_parallel_skip_before_threshold and cfg.source.source_exact_precompute:
+        threshold_ready = True
+    elif parallel_skip_before_threshold_6ch_enabled(cfg, args):
         threshold_ready = True
     return (
         cfg.exact.exact_parallel_skip_safe_feedback

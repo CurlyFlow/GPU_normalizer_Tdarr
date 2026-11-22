@@ -176,7 +176,7 @@ def _derive_feedback_features(args, *, exact_limiter_active, source_config, audi
         'exact_safe_feedback_window_accum': exact_segmented_safe_feedback and not exact_safe_feedback_slot_accum and env_flag('LOUDNORM_GPU_SAFE_FEEDBACK_WINDOW_ACCUM'),
         'exact_parallel_unsafe_feedback': exact_parallel_unsafe_feedback,
         'exact_skip_unsafe_feedback': exact_parallel_unsafe_feedback and exact_skip_safe_feedback and env_flag('LOUDNORM_GPU_SKIP_UNSAFE_FEEDBACK', True),
-        'exact_unsafe_skip_kernel_6ch': exact_parallel_unsafe_feedback and env_flag('LOUDNORM_GPU_UNSAFE_SKIP_KERNEL_6CH'),
+        'exact_unsafe_skip_kernel_6ch': exact_parallel_unsafe_feedback and env_flag('LOUDNORM_GPU_UNSAFE_SKIP_KERNEL_6CH', True),
         'exact_parallel_skip_safe_feedback': exact_parallel_skip_safe_feedback,
         'exact_safe_skip_apply_frame_kernel': exact_parallel_skip_safe_feedback and env_flag('LOUDNORM_GPU_SAFE_SKIP_APPLY_FRAME_KERNEL'),
         'exact_skip_apply_rolling_ring_6ch': exact_parallel_skip_safe_feedback and args.channels == 6 and env_flag('LOUDNORM_GPU_SKIP_APPLY_ROLLING_RING_6CH'),

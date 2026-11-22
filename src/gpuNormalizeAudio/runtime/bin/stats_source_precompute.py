@@ -5,7 +5,7 @@ from cuda_launch import launch_timed_kernel
 import kernel_args
 from stats_source_audit import _finish_source_sum_audit
 from stats_source_precompute_stage import _run_source_exact_precompute_stage
-from stream_chunk_reader import FrameChunkReader
+from stream_ingress_resample import frame_chunk_reader_for
 
 
 def _run_source_exact_precompute_stream(ctx, result):
@@ -16,20 +16,15 @@ def _run_source_exact_precompute_stream(ctx, result):
     next_window = 0
     overlap_frames = cfg.input_shape.frames_per_window * 29
 
-    with FrameChunkReader(
-        ctx.args,
-        cfg.root.streaming_io,
+    with frame_chunk_reader_for(
+        ctx,
         cfg.input_shape.decode_command,
         'streaming source exact precompute',
         ctx.host_io.host_in,
-        nbytes=result.nbytes,
         chunk_bytes=cfg.sizing.source_precompute_chunk_bytes,
-        frame_bytes=cfg.sizing.frame_bytes,
         partial_frame_error='streaming source exact precompute ended with a partial frame',
         staging_label='streaming source exact precompute staging',
         short_read_error='short input read during source exact precompute',
-        limit_kind='expected',
-        limit_label='streaming source exact precompute',
         ) as chunks:
         for chunk in chunks:
             stage.extend(host_view[:chunk.this_bytes])

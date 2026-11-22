@@ -27,26 +27,29 @@ int clock_output_stream(const AVFormatContext *input, unsigned index)
     return -1;
 }
 
-int copy_clock_structure(AVFormatContext *output, const AVFormatContext *input)
+int copy_clock_stream(AVFormatContext *output, const AVStream *before)
 {
     int result;
-    for (unsigned i = 0; i < input->nb_streams; i++) {
-        const AVStream *before = input->streams[i];
-        /* MOV regenerates its text carrier from the complete chapter table. */
-        if (clock_output_stream(input, i) < 0) continue;
-        AVStream *after = avformat_new_stream(output, NULL);
-        if (!after) return AVERROR(ENOMEM);
-        if ((result = avcodec_parameters_copy(after->codecpar, before->codecpar)) < 0) return result;
-        if (clock_aac_lc(before->codecpar)) {
-            if (before->codecpar->frame_size && before->codecpar->frame_size != 1024) return AVERROR(ENOTSUP);
-            after->codecpar->frame_size = 1024;
-        }
-        after->codecpar->codec_tag = before->codecpar->codec_tag;
-        after->time_base = before->time_base; after->sample_aspect_ratio = before->sample_aspect_ratio;
-        after->avg_frame_rate = before->avg_frame_rate; after->disposition = before->disposition;
-        if (before->disposition & AV_DISPOSITION_ATTACHED_PIC) return AVERROR(ENOTSUP);
-        if ((result = av_dict_copy(&after->metadata, before->metadata, 0)) < 0) return result;
+    AVStream *after = avformat_new_stream(output, NULL);
+    if (!after) return AVERROR(ENOMEM);
+    if ((result = avcodec_parameters_copy(after->codecpar, before->codecpar)) < 0) return result;
+    if (clock_aac_lc(before->codecpar)) {
+        if (before->codecpar->frame_size && before->codecpar->frame_size != 1024) return AVERROR(ENOTSUP);
+        after->codecpar->frame_size = 1024;
     }
+    after->codecpar->codec_tag = before->codecpar->codec_tag;
+    after->time_base = before->time_base; after->sample_aspect_ratio = before->sample_aspect_ratio;
+    if (!after->codecpar->sample_aspect_ratio.num && before->sample_aspect_ratio.num) {
+        after->codecpar->sample_aspect_ratio = before->sample_aspect_ratio;
+    }
+    after->avg_frame_rate = before->avg_frame_rate; after->disposition = before->disposition;
+    if (before->disposition & AV_DISPOSITION_ATTACHED_PIC) return AVERROR(ENOTSUP);
+    return av_dict_copy(&after->metadata, before->metadata, 0);
+}
+
+int copy_clock_chapters_and_metadata(AVFormatContext *output, const AVFormatContext *input)
+{
+    int result;
     if (input->nb_chapters > 100000) return AVERROR(EINVAL);
     if (input->nb_chapters) {
         output->chapters = av_calloc(input->nb_chapters, sizeof(*output->chapters));
@@ -64,7 +67,18 @@ int copy_clock_structure(AVFormatContext *output, const AVFormatContext *input)
     return av_dict_copy(&output->metadata, input->metadata, 0);
 }
 
-static int retime_packet(AVPacket *packet, AVStream *input, AVStream *output, ClockTrack *track)
+int copy_clock_structure(AVFormatContext *output, const AVFormatContext *input)
+{
+    int result;
+    for (unsigned i = 0; i < input->nb_streams; i++) {
+        /* MOV regenerates its text carrier from the complete chapter table. */
+        if (clock_output_stream(input, i) < 0) continue;
+        if ((result = copy_clock_stream(output, input->streams[i])) < 0) return result;
+    }
+    return copy_clock_chapters_and_metadata(output, input);
+}
+
+int clock_retime_packet(AVPacket *packet, AVStream *input, AVStream *output, ClockTrack *track)
 {
     if (input->time_base.num != 1 || input->time_base.den != track->rate
         || output->time_base.num != 1 || output->time_base.den != track->rate) return AVERROR(EINVAL);
@@ -116,6 +130,30 @@ const char *clock_mux_format(const AVFormatContext *input)
     return brand && !strcmp(brand->value, "qt  ") ? "mov" : "mp4";
 }
 
+int clock_has_mov_text_btrt(const AVFormatContext *output)
+{
+    for (unsigned i = 0; i < output->nb_streams; i++) {
+        const AVCodecParameters *p = output->streams[i]->codecpar;
+        if (p->codec_id == AV_CODEC_ID_MOV_TEXT && p->extradata_size >= 20
+            && AV_RB32(p->extradata + p->extradata_size - 20) == 20
+            && !memcmp(p->extradata + p->extradata_size - 16, "btrt", 4)) return 1;
+    }
+    return 0;
+}
+
+int clock_video_timescale(const AVFormatContext *output)
+{
+    int scale = 0;
+    for (unsigned i = 0; i < output->nb_streams; i++) {
+        const AVStream *st = output->streams[i];
+        if (st->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
+        if (st->time_base.num != 1 || st->time_base.den <= 0 || st->time_base.den >= 10000) return 0;
+        if (scale && scale != st->time_base.den) return 0;
+        scale = st->time_base.den;
+    }
+    return scale;
+}
+
 int main(int argc, char **argv)
 {
     void *iterator = NULL;
@@ -131,6 +169,7 @@ int main(int argc, char **argv)
     if (avformat_version() != LIBAVFORMAT_VERSION_INT
         || avcodec_version() != LIBAVCODEC_VERSION_INT || avutil_version() != LIBAVUTIL_VERSION_INT) return 2;
     if (argc == 6 && !strcmp(argv[1], "--preserve-audio")) return merge_clock_audio(argv + 2);
+    if (argc == 6 && !strcmp(argv[1], "--mux-audio")) return mux_clock_audio(argv + 2);
     if (argc != 4) return 2;
     AVFormatContext *input = NULL, *output = NULL;
     AVIOContext *reader = NULL, *writer = NULL;
@@ -154,7 +193,7 @@ int main(int argc, char **argv)
     target.bound = original.st_size * 2 + 64 * INT64_C(1024) * 1024;
     input = avformat_alloc_context();
     if (!input) { result = AVERROR(ENOMEM); goto done; }
-    reader = avio_alloc_context(av_malloc(32768), 32768, 0, &source, clock_read, NULL, clock_seek);
+    reader = avio_alloc_context(av_malloc(CLOCK_IO_BUF_SIZE), CLOCK_IO_BUF_SIZE, 0, &source, clock_read, NULL, clock_seek);
     if (!reader || !reader->buffer) { result = AVERROR(ENOMEM); goto done; }
     input->pb = reader; input->flags |= AVFMT_FLAG_CUSTOM_IO;
     if ((result = avformat_open_input(&input, NULL, NULL, NULL)) < 0) goto done;
@@ -178,10 +217,13 @@ int main(int argc, char **argv)
     output->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED; output->flags |= AVFMT_FLAG_CUSTOM_IO;
     target.fd = open(argv[2], O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (target.fd < 0) { result = AVERROR(errno); goto done; }
-    writer = avio_alloc_context(av_malloc(32768), 32768, 1, &target, NULL, clock_write, clock_seek);
+    writer = avio_alloc_context(av_malloc(CLOCK_IO_BUF_SIZE), CLOCK_IO_BUF_SIZE, 1, &target, NULL, clock_write, clock_seek);
     if (!writer || !writer->buffer) { result = AVERROR(ENOMEM); goto done; }
     output->pb = writer;
     av_dict_set(&options, "use_editlist", "1", 0);
+    if (clock_has_mov_text_btrt(output)) av_dict_set(&options, "write_btrt", "0", 0);
+    int video_scale = clock_video_timescale(output);
+    if (video_scale > 0) av_dict_set_int(&options, "video_track_timescale", video_scale, 0);
     int timescale = clock_movie_timescale(input, &plan);
     if (timescale < 1) { result = AVERROR(ENOTSUP); goto done; }
     av_dict_set_int(&options, "movie_timescale", timescale, 0);
@@ -205,7 +247,7 @@ int main(int argc, char **argv)
         if (mapped < 0) { av_packet_unref(packet); continue; }
         if (packet->pts == AV_NOPTS_VALUE || packet->dts == AV_NOPTS_VALUE) { result = AVERROR(EINVAL); goto done; }
         AVStream *before = input->streams[index], *after = output->streams[mapped];
-        if (tracks[index] && (result = retime_packet(packet, before, after, tracks[index])) < 0) goto done;
+        if (tracks[index] && (result = clock_retime_packet(packet, before, after, tracks[index])) < 0) goto done;
         av_packet_rescale_ts(packet, before->time_base, after->time_base);
         packet->stream_index = mapped;
         packet->pos = -1;

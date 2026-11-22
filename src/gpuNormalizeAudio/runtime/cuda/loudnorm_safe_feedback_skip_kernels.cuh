@@ -125,6 +125,35 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
     __shared__ double source_out_window_sum0_s;
     __shared__ double source_out_window_sum1_s;
     __shared__ double source_feedback_sum_s[2];
+    __shared__ double slot_sum_s[5];
+    __shared__ unsigned int hist_s[1000];
+    __shared__ double energies_s[1000];
+    __shared__ unsigned int nz_mask_s[32];
+    __shared__ unsigned int ring_exceed_mask_s[OPX_PARALLEL_LIMITER_MASK_WORDS];
+
+    if (stride >= 32U && (stride & 31U) == 0U) {
+        const unsigned int warp_id = tid >> 5;
+        const unsigned int lane = tid & 31U;
+        const unsigned int num_warps = stride >> 5;
+        for (unsigned int w = warp_id; w < 32U; w += num_warps) {
+            const unsigned int bin = (w << 5) | lane;
+            const unsigned int h = bin < 1000U ? hist[bin] : 0U;
+            if (bin < 1000U) {
+                hist_s[bin] = h;
+                energies_s[bin] = hist_energies[bin];
+            }
+            const unsigned int nz = __ballot_sync(0xffffffffU, h != 0U);
+            if (lane == 0U) nz_mask_s[w] = nz;
+        }
+    } else if (tid == 0U) {
+        for (unsigned int w = 0U; w < 32U; w++) nz_mask_s[w] = 0U;
+        for (unsigned int bin = 0U; bin < 1000U; bin++) {
+            const unsigned int h = hist[bin];
+            hist_s[bin] = h;
+            energies_s[bin] = hist_energies[bin];
+            if (h != 0U) nz_mask_s[bin >> 5] |= (1U << (bin & 31U));
+        }
+    }
 
     if (tid == 0U) {
         short_index_s = state_i[FB_I_SHORT_INDEX];
@@ -163,8 +192,16 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
     double out_v2 = 0.0;
     double out_v3 = 0.0;
     double out_v4 = 0.0;
+    const int out_slot_6ch = (!source_precomputed && channels == 6U && tid < 6U) ? ebur_channel_slot_dev(channels, tid) : -1;
+    const double out_weight_6ch = out_slot_6ch >= 0 ? ebur_slot_weight_dev(out_slot_6ch) : 0.0;
     if (source_precomputed && tid < 2U) {
         const unsigned int state_base = tid * 4U;
+        out_v1 = out_states[state_base + 0U];
+        out_v2 = out_states[state_base + 1U];
+        out_v3 = out_states[state_base + 2U];
+        out_v4 = out_states[state_base + 3U];
+    } else if (out_slot_6ch >= 0) {
+        const unsigned int state_base = (unsigned int)out_slot_6ch * 4U;
         out_v1 = out_states[state_base + 0U];
         out_v2 = out_states[state_base + 1U];
         out_v3 = out_states[state_base + 2U];
@@ -337,16 +374,29 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
         }
         __syncthreads();
 
-        if (use_limiter_s && tid == 0U) {
-            true_peak_limiter_dev(
-                limiter_buf, output, produced_s, nb_s, channels,
-                limiter_lookahead_frames * channels, output_limiter_index_s * channels,
-                attack_length, release_length, ceiling, frame_type_s, prev_smp,
-                &limiter_state_s, &peak_index_s, &env_index_s, &env_cnt_s,
-                &attack_state_s, &gain_reduction0_s, &gain_reduction1_s,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, (int)limiter_maybe_above_s, 1, 0, 0, 0, 0, 0
-            );
+        if (use_limiter_s) {
+            if (frame_type_s != 0 &&
+                stride >= 32U && (stride & 31U) == 0U &&
+                limiter_lookahead_frames <= OPX_PARALLEL_LIMITER_MAX_RING_FRAMES &&
+                limiter_lookahead_frames > nb_s + attack_length + 16U) {
+                parallel_true_peak_limiter_block_dev(
+                    limiter_buf, ring_exceed_mask_s, nb_s, channels,
+                    limiter_lookahead_frames, output_limiter_index_s,
+                    attack_length, release_length, ceiling, prev_smp,
+                    &limiter_state_s, &peak_index_s, &env_index_s, &env_cnt_s,
+                    &attack_state_s, &gain_reduction0_s, &gain_reduction1_s
+                );
+            } else if (tid == 0U) {
+                true_peak_limiter_dev(
+                    limiter_buf, output, produced_s, nb_s, channels,
+                    limiter_lookahead_frames * channels, output_limiter_index_s * channels,
+                    attack_length, release_length, ceiling, frame_type_s, prev_smp,
+                    &limiter_state_s, &peak_index_s, &env_index_s, &env_cnt_s,
+                    &attack_state_s, &gain_reduction0_s, &gain_reduction1_s,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, (int)limiter_maybe_above_s, 0, 0, 0, 0, 0, 0
+                );
+            }
         }
         __syncthreads();
 
@@ -358,7 +408,7 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
 
         const int fused_direct_feedback_s = (!use_limiter_s && source_fused_direct_feedback && above_threshold_s == 0 && nb_s > 0U);
 
-        if (!use_limiter_s) {
+        {
             if (frame_specialized && above_threshold_s != 0) {
                 if (rolling_ring_6ch) {
                 unsigned int src_frame = output_limiter_index_s + tid;
@@ -482,6 +532,40 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
                 }
             }
             __syncthreads();
+        } else if (channels == 6U && above_threshold_s == 0) {
+            if (tid == 0U) {
+                for (unsigned int s = 0U; s < 5U; s++) slot_sum_s[s] = 0.0;
+            }
+            __syncthreads();
+            if (out_slot_6ch >= 0) {
+                double local_slot_sum = 0.0;
+                for (unsigned int n = 0U; n < nb_s; n++) {
+                    const double out = output[((unsigned long long)(produced_s + n) * 6ULL) + tid];
+                    const double v0 = kweight_v0_rn_dev(out, a, out_v1, out_v2, out_v3, out_v4);
+                    const double y = kweight_y_rn_dev(b, v0, out_v1, out_v2, out_v3, out_v4);
+                    local_slot_sum += y * y * out_weight_6ch;
+                    out_v4 = out_v3;
+                    out_v3 = out_v2;
+                    out_v2 = out_v1;
+                    out_v1 = v0;
+                }
+                slot_sum_s[(unsigned int)out_slot_6ch] = local_slot_sum;
+            }
+            __syncthreads();
+            if (tid == 0U) {
+                double window_sum = 0.0;
+                window_sum += slot_sum_s[0];
+                window_sum += slot_sum_s[1];
+                window_sum += slot_sum_s[2];
+                window_sum += slot_sum_s[3];
+                window_sum += slot_sum_s[4];
+                commit_feedback_output_window_sum_dev(
+                    window_sum, produced_s, nb_s, frames_per_window, 0,
+                    out_short_ring, &out_short_sum_s, &out_short_index_s, &out_short_count_s,
+                    &out_window_sum_s, &out_window_count_s
+                );
+            }
+            __syncthreads();
         }
 
         if (tid == 0U && limiter_maybe_above_s > 0U) limiter_maybe_above_s--;
@@ -514,12 +598,17 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
                 if (source_precomputed) short_sum_s = input_short_sum;
                 if (input_window_s >= 3) {
                     double e = (source_precomputed ? input_hist4_sum : (window_sums[input_window_s] + window_sums[input_window_s - 1] + window_sums[input_window_s - 2] + window_sums[input_window_s - 3])) / (double)(frames_per_window * 4U);
-                    if (e >= hist_boundaries[0]) hist[hist_index_from_boundaries_dev(e, hist_boundaries)]++;
+                    if (e >= hist_boundaries[0]) {
+                        int bin = hist_index_from_boundaries_dev(e, hist_boundaries);
+                        hist_s[bin]++;
+                        nz_mask_s[bin >> 5] |= (1U << (bin & 31));
+                    }
                 }
             }
-            const double global = gated_loudness_lut_boundaries_dev(hist, hist_energies, hist_boundaries);
+            double global;
+            double relative_threshold;
+            gated_and_relative_loudness_nz_dev(hist_s, energies_s, hist_boundaries, nz_mask_s, &global, &relative_threshold);
             const double shortterm = energy_to_loudness_dev(short_sum_s / (double)(frames_per_window * 30U));
-            const double relative_threshold = relative_threshold_lut_dev(hist, hist_energies);
             if (above_threshold_s == 0) {
                 double shortterm_out = energy_to_loudness_dev(out_short_sum_s / (double)(frames_per_window * 30U));
                 if (shortterm > measured_thresh) prev_delta_s *= 1.0058;
@@ -542,8 +631,17 @@ extern "C" __global__ void safe_feedback_skip_apply6_f64_kernel(
         __syncthreads();
     }
 
+    for (unsigned int bin = tid; bin < 1000U; bin += stride) {
+        hist[bin] = hist_s[bin];
+    }
     if (source_precomputed && tid < 2U) {
         const unsigned int state_base = tid * 4U;
+        out_states[state_base + 0U] = out_v1;
+        out_states[state_base + 1U] = out_v2;
+        out_states[state_base + 2U] = out_v3;
+        out_states[state_base + 3U] = out_v4;
+    } else if (out_slot_6ch >= 0) {
+        const unsigned int state_base = (unsigned int)out_slot_6ch * 4U;
         out_states[state_base + 0U] = out_v1;
         out_states[state_base + 1U] = out_v2;
         out_states[state_base + 2U] = out_v3;

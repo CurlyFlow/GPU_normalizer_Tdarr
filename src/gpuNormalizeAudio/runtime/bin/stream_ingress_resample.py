@@ -257,6 +257,18 @@ class IngressResamplingReadHandle:
 
 
 def frame_chunk_reader_for(ctx, decode_command, label, host_buffer, *, partial_frame_error, staging_label, short_read_error, chunk_bytes=None, direct_payload=False, direct_bytearray_payload=False, direct_payload_buffers=None, auto_return_payload=True):
+    if getattr(ctx.args, 'swr_upsample_48k_f32', False):
+        from swr_input_upsample import GpuSwrUpsamplingFrameChunkReader
+        return GpuSwrUpsamplingFrameChunkReader(
+            ctx,
+            decode_command,
+            label,
+            host_buffer,
+            partial_frame_error=partial_frame_error,
+            staging_label=staging_label,
+            short_read_error=short_read_error,
+            chunk_bytes=chunk_bytes,
+        )
     if getattr(ctx.cfg.input_shape, 'ingress_rate', ctx.args.rate) != ctx.args.rate:
         return IngressResamplingFrameChunkReader(
             ctx.args,

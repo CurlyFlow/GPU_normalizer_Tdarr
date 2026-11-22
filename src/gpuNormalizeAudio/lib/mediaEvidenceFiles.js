@@ -4,29 +4,52 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { StringDecoder } = require("node:string_decoder");
+const { Worker } = require("node:worker_threads");
+const { fileStamp, fileDigest } = require("./mediaDigestCore");
+require("./mediaDigestWorker");
 
-function fileStamp(stat) {
-  return ['dev', 'ino', 'size', 'mtimeNs', 'ctimeNs'].map(key => String(stat[key])).join(':');
+const WORKER_DIGEST_MIN_BYTES = 8 * 1024 * 1024;
+
+function fileDigestInWorker(file) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, "mediaDigestWorker.js"), { workerData: { file } });
+    let settled = false;
+    worker.once("message", (digest) => { settled = true; resolve(digest); });
+    worker.once("error", (err) => { if (!settled) { settled = true; reject(err); } });
+    worker.once("exit", (code) => {
+      if (!settled) {
+        settled = true;
+        reject(new Error(`Digest worker exited unexpectedly with code ${code}`));
+      }
+    });
+  });
 }
 
-function fileDigest(file) {
-  const fd = fs.openSync(file, 'r');
+async function fileDigestAsync(file) {
+  const probe = await fs.promises.stat(file, { bigint: true });
+  if (!probe.isFile()) throw new Error("Evidence input is not a regular file");
+  if (probe.size >= BigInt(WORKER_DIGEST_MIN_BYTES)) {
+    return await fileDigestInWorker(file);
+  }
+  const handle = await fs.promises.open(file, 'r');
   try {
-    const before = fs.fstatSync(fd, { bigint: true });
+    const before = await handle.stat({ bigint: true });
     if (!before.isFile()) throw new Error('Evidence input is not a regular file');
     const hash = crypto.createHash('sha256'), buffer = Buffer.allocUnsafe(1024 * 1024);
-    let bytes = 0, read;
-    while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
-      hash.update(buffer.subarray(0, read));
-      bytes += read;
+    let bytes = 0;
+    while (true) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead <= 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      bytes += bytesRead;
     }
-    if (fileStamp(before) !== fileStamp(fs.fstatSync(fd, { bigint: true }))
-        || fileStamp(before) !== fileStamp(fs.statSync(file, { bigint: true })) || BigInt(bytes) !== before.size) {
+    const [afterFd, afterPath] = await Promise.all([handle.stat({ bigint: true }), fs.promises.stat(file, { bigint: true })]);
+    if (fileStamp(before) !== fileStamp(afterFd) || fileStamp(before) !== fileStamp(afterPath) || BigInt(bytes) !== before.size) {
       throw new Error('Evidence input changed during hashing');
     }
     return { sha256: hash.digest('hex'), bytes, stamp: fileStamp(before) };
   } finally {
-    fs.closeSync(fd);
+    await handle.close();
   }
 }
 
@@ -103,4 +126,4 @@ function readRetainedReceipt(binding) {
   return value;
 }
 
-module.exports = { fileStamp, fileDigest, readEvidenceLines, sameFileGeneration, retainedReceipt, writePrivateReceipt, readRetainedReceipt };
+module.exports = { fileStamp, fileDigest, fileDigestAsync, readEvidenceLines, sameFileGeneration, retainedReceipt, writePrivateReceipt, readRetainedReceipt };

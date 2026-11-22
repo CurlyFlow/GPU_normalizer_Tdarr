@@ -2,7 +2,10 @@
 
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const os = require('node:os');
 const { fileStamp } = require('./mediaEvidenceFiles');
+
+const IS_LITTLE_ENDIAN = os.endianness() === 'LE';
 
 function nativePcmFormat(stream) {
   if (/^pcm_[su]64/.test(stream?.codec || stream?.codec_name || '')) {
@@ -49,9 +52,24 @@ class PcmFingerprint {
     this.hash.update(chunk);
     const data = this.pending.length ? Buffer.concat([this.pending, chunk]) : chunk;
     const end = data.length - data.length % this.width;
-    for (let offset = 0; offset < end; offset += this.width) {
-      const value = this.width === 8 ? data.readDoubleLE(offset) : data.readFloatLE(offset);
-      if (!Number.isFinite(value)) this.finite = false;
+    if (this.finite && end > 0) {
+      if (IS_LITTLE_ENDIAN && (data.byteOffset & 3) === 0) {
+        const words = new Uint32Array(data.buffer, data.byteOffset, end >>> 2);
+        if (this.width === 4) {
+          for (let index = 0; index < words.length; index++) {
+            if ((words[index] & 0x7f800000) === 0x7f800000) { this.finite = false; break; }
+          }
+        } else {
+          for (let index = 1; index < words.length; index += 2) {
+            if ((words[index] & 0x7ff00000) === 0x7ff00000) { this.finite = false; break; }
+          }
+        }
+      } else {
+        for (let offset = 0; offset < end; offset += this.width) {
+          const value = this.width === 8 ? data.readDoubleLE(offset) : data.readFloatLE(offset);
+          if (!Number.isFinite(value)) { this.finite = false; break; }
+        }
+      }
     }
     this.samples += end / this.width;
     this.pending = Buffer.from(data.subarray(end));

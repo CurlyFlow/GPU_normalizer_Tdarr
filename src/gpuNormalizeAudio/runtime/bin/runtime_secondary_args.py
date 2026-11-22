@@ -24,6 +24,8 @@ PAIRED_APPLY_RESET = {
     'paired_apply_measured_thresh': None,
     'paired_apply_offset_db': None,
     'paired_apply_stereo_fallback_source_exact': False,
+    'paired_apply_swr_downsample_96k_f32': False,
+    'paired_apply_swr_upsample_48k_f32': False,
 }
 
 
@@ -65,4 +67,6 @@ def build_paired_apply_args(args):
         'measured_thresh': args.paired_apply_measured_thresh,
         'offset_db': args.paired_apply_offset_db,
         'stereo_fallback_source_exact': bool(args.paired_apply_stereo_fallback_source_exact),
+        'swr_downsample_96k_f32': bool(getattr(args, 'paired_apply_swr_downsample_96k_f32', False)),
+        'swr_upsample_48k_f32': bool(getattr(args, 'paired_apply_swr_upsample_48k_f32', False)),
     }, reset_apply=True)

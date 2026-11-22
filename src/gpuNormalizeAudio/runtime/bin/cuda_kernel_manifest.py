@@ -27,6 +27,8 @@ KERNEL_HANDLE_ATTRS = (
     'short_filter_fn',
     'short_gain_fn',
     'short_apply_fn',
+    'swr_downsample_fn',
+    'swr_upsample_fn',
     'q_fn',
     'q_no_peaks_fn',
     'sums_fn',
@@ -83,6 +85,8 @@ CUDA_KERNEL_SYMBOLS = (
     'short_source_filter_f64_kernel',
     'short_source_gain_f64_kernel',
     'short_source_apply_f64_kernel',
+    'swr_downsample_192k_to_96k_f32_kernel',
+    'swr_upsample_48k_to_192k_f32_to_f64_kernel',
     'apply_linear_f64_io_kernel',
     'apply_plan_f64_io_ffmpeg_feedback_limiter_stream_kernel',
     'apply_plan_f64_io_ffmpeg_timing_final_kernel',
@@ -176,6 +180,8 @@ def resolve_kernel_load_plan(args, cfg):
             _spec('short_filter_fn', 'short_source_filter_f64_kernel'),
             _spec('short_gain_fn', 'short_source_gain_f64_kernel'),
             _spec('short_apply_fn', 'short_source_apply_f64_kernel'),
+            _spec('swr_downsample_fn', 'swr_downsample_192k_to_96k_f32_kernel', 'swr-downsample-192k-to-96k'),
+            _spec('swr_upsample_fn', 'swr_upsample_48k_to_192k_f32_to_f64_kernel', 'swr-upsample-48k-to-192k'),
         ])
     if cfg.exact.exact_stats_stream or cfg.exact.audit_ffmpeg_input_metrics or cfg.exact.emit_first_pass_json:
         specs.append(_spec('exact_sums_fn', 'kweight_window_sums_f64_stream_kernel', 'exact-sums'))

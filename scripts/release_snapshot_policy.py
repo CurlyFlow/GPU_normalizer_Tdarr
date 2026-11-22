@@ -14,6 +14,7 @@ ALLOWED_SOURCE_PATTERNS = (
     'lib/*.js',
     'runtime/bin/loudnorm-gpu-source-port',
     'runtime/bin/audio_clock_mux',
+    'runtime/bin/aac_encode_mt',
     'runtime/bin/*.py',
     'runtime/bin/*.c',
     'runtime/bin/*.h',

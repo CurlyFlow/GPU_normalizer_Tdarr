@@ -82,11 +82,13 @@ async function createNormalizationReference(request, map, directory, tools) {
   if (!source || (!map.stereo && Number(source.channels) !== map.channels)) throw Error("Unsupported normalized channel transform");
   const environment = referenceEnvironment(request.sourceFile, request.plugin.file, request.ffmpegPath, roots);
   let prepared = request.sourceFile, recipe = { kind: "admitted-original" };
-  if (map.stereo || originalAudio.length !== 1 || map.sourceIndex !== 0) {
-    const ext = map.stereo && [".mov", ".mkv"].includes(path.extname(request.sourceFile)) ? path.extname(request.sourceFile) : ".mkv";
+  const sourceExt = path.extname(request.sourceFile).toLowerCase();
+  const rebasePositiveStart = [".mp4", ".mov", ".m4a"].includes(sourceExt) && Number(source.start_pts) > 0;
+  if (map.stereo || originalAudio.length !== 1 || map.sourceIndex !== 0 || rebasePositiveStart) {
+    const ext = map.stereo && [".mov", ".mp4", ".mkv"].includes(sourceExt) ? sourceExt : ".mkv";
     prepared = path.join(directory, `reference-input${ext}`);
-    const spec = map.stereo ? stereoReferenceRecipe(request.sourceFile, prepared, map.sourceIndex)
-      : singleAudioReferenceRecipe(request.sourceFile, map.sourceIndex);
+    const spec = map.stereo ? stereoReferenceRecipe(request.sourceFile, prepared, map.sourceIndex, { rebasePositiveStart })
+      : singleAudioReferenceRecipe(request.sourceFile, map.sourceIndex, { rebasePositiveStart });
     if (!map.stereo) prepared = path.join(directory, `reference-input${spec.extension}`);
     recipe = spec.recipe;
     prepareReference(tools.ffmpeg, spec.args, prepared);

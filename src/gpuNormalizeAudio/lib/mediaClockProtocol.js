@@ -8,6 +8,21 @@ const SCHEMA = "media-clock-verification.v3";
 const SCOPE = "clocks-copied-video-and-declared-copy-audio";
 const MAX_BYTES = 4 * 1024 * 1024;
 
+function validateEofBinding(binding, directory) {
+  if (!binding || Object.keys(binding).sort().join() !== "file,identity"
+      || typeof binding.file !== "string" || binding.file.includes("\0") || !path.isAbsolute(binding.file)
+      || path.resolve(binding.file) !== binding.file || fs.realpathSync(binding.file) !== binding.file
+      || Object.keys(binding.identity || {}).sort().join() !== "bytes,sha256,stamp"
+      || !/^[a-f0-9]{64}$/.test(binding.identity.sha256)
+      || !Number.isSafeInteger(binding.identity.bytes) || binding.identity.bytes < 1
+      || typeof binding.identity.stamp !== "string"
+      || path.basename(binding.file) !== "receipt.json"
+      || path.dirname(path.dirname(binding.file)) !== directory
+      || !/^\.media-eof-context-[A-Za-z0-9]+$/.test(path.basename(path.dirname(binding.file)))) {
+    throw Error("Invalid normalized EOF context receipt binding");
+  }
+}
+
 function resolveVideoMap(value, sourceCount) {
   if (!Number.isSafeInteger(sourceCount) || sourceCount < 0 || sourceCount > 256) throw Error("Invalid source video count");
   const maps = value === null ? Array.from({ length: sourceCount }, (_, index) => ({ sourceIndex: index, candidateIndex: index })) : value;
@@ -20,8 +35,21 @@ function resolveVideoMap(value, sourceCount) {
   return maps;
 }
 
+function validateSourceClockTick(tick) {
+  if (!tick || Object.keys(tick).sort().join() !== "denominator,numerator"
+      || typeof tick.numerator !== "string" || !/^[1-9]\d{0,9}$/.test(tick.numerator)
+      || typeof tick.denominator !== "string" || !/^[1-9]\d{0,9}$/.test(tick.denominator)
+      || BigInt(tick.numerator) >= BigInt(tick.denominator)
+      || BigInt(tick.denominator) > 1000000n) {
+    throw Error("Invalid source container clock tick");
+  }
+}
+
 function validateRequest(request) {
-  if (!request || Object.keys(request).sort().join() !== "audioMap,candidateFile,directory,ffmpegPath,ffprobePath,sourceFile,videoMap") {
+  const hasEof = request && Object.hasOwn(request, "eofContext");
+  const hasTick = request && Object.hasOwn(request, "sourceClockTick");
+  const expectedKeys = `audioMap,candidateFile,directory,${hasEof ? "eofContext," : ""}ffmpegPath,ffprobePath,${hasTick ? "sourceClockTick," : ""}sourceFile,videoMap`;
+  if (!request || Object.keys(request).sort().join() !== expectedKeys) {
     throw Error("Invalid clock verification request");
   }
   for (const key of ["sourceFile", "candidateFile", "directory"]) {
@@ -30,6 +58,8 @@ function validateRequest(request) {
       throw Error("Clock verification requires canonical paths");
     }
   }
+  if (hasEof) validateEofBinding(request.eofContext, request.directory);
+  if (hasTick) validateSourceClockTick(request.sourceClockTick);
   for (const key of ["ffmpegPath", "ffprobePath"]) {
     if (typeof request[key] !== "string" || !request[key].trim() || request[key].includes("\0")) throw Error("Invalid media executable");
   }
@@ -85,6 +115,22 @@ function validateReceipt(value, request) {
     if (item.status !== "pass") continue;
     validateNativePcmPair(item);
   }
+  if (Object.hasOwn(request, "eofContext")) {
+    validateEofBinding(request.eofContext, path.dirname(path.dirname(request.eofContext.file)));
+    if (JSON.stringify(value.eofContext) !== JSON.stringify(request.eofContext)) {
+      throw Error("Clock receipt EOF context differs from request");
+    }
+  } else if (Object.hasOwn(value, "eofContext") && value.eofContext !== null) {
+    throw Error("Unexpected EOF context in strict clock receipt");
+  }
+  if (Object.hasOwn(request, "sourceClockTick")) {
+    validateSourceClockTick(request.sourceClockTick);
+    if (JSON.stringify(value.sourceClockTick) !== JSON.stringify(request.sourceClockTick)) {
+      throw Error("Clock receipt source tick differs from request");
+    }
+  } else if (Object.hasOwn(value, "sourceClockTick") && value.sourceClockTick !== null) {
+    throw Error("Unexpected source clock tick in strict clock receipt");
+  }
 }
 
-module.exports = { SCHEMA, SCOPE, MAX_BYTES, resolveVideoMap, validateRequest, validateReceipt };
+module.exports = { SCHEMA, SCOPE, MAX_BYTES, resolveVideoMap, validateEofBinding, validateSourceClockTick, validateRequest, validateReceipt };

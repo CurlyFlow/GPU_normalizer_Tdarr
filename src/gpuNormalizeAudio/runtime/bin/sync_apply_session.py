@@ -17,6 +17,8 @@ from stream_ingress_resample import IngressResamplingReadHandle
 from stream_processes import finish_decode_pass, finish_encode_pass, start_decode_pass, start_encode_pass
 from sync_apply_output import ExactAsyncOutput, SyncPinnedBorrowedOutput
 from sync_apply_result_capture import capture_sync_apply_close_results
+from swr_input_upsample import GpuSwrUpsamplingWindow
+from swr_output_downsample import GpuSwrDownsampler192kTo96k
 
 
 @dataclass
@@ -37,6 +39,7 @@ class SyncApplyState:
     exact_stream_window: Any
     async_output: Any
     borrowed_output: Any
+    swr_downsampler: Any = None
 
 
 def _run_cleanup(errors, action, *args, **kwargs):
@@ -125,7 +128,24 @@ def _open_sync_apply_state(ctx, result, *, force_prefetch, unwind):
         unwind.callback(_abort_open_stream, decode_proc, fi)
         encode_proc, fo = start_encode_pass(args, cfg.root.streaming_io, cfg.input_shape.encode_command)
         unwind.callback(_abort_open_stream, encode_proc, fo)
-    fo, async_writer = maybe_async_encode_writer(cfg.root.streaming_io, fo, chunk_bytes=cfg.sizing.output_chunk_bytes)
+    swr_downsampler = None
+    if getattr(args, 'swr_downsample_96k_f32', False):
+        if args.rate != 192000 or args.input_format != 'f64le' or args.output_format != 'f64le':
+            raise RuntimeError('--swr-downsample-96k-f32 requires --rate 192000 with f64le I/O')
+        max_chunk_frames = max(1, cfg.sizing.output_chunk_bytes // (args.channels * 8))
+        swr_downsampler = GpuSwrDownsampler192kTo96k(
+            cuda,
+            channels=args.channels,
+            max_chunk_frames=max_chunk_frames,
+            total_source_frames=cfg.input_shape.total_frames,
+        )
+        unwind.callback(swr_downsampler.cleanup, cuda)
+    writer_chunk_bytes = (
+        max(4096, (cfg.sizing.output_chunk_bytes // 4) + (68 * args.channels * 4))
+        if swr_downsampler is not None
+        else cfg.sizing.output_chunk_bytes
+    )
+    fo, async_writer = maybe_async_encode_writer(cfg.root.streaming_io, fo, chunk_bytes=writer_chunk_bytes)
     if async_writer is not None:
         unwind.callback(fo.abort)
     async_output = None
@@ -133,7 +153,7 @@ def _open_sync_apply_state(ctx, result, *, force_prefetch, unwind):
     async_output_double_buffer = _env_flag('LOUDNORM_GPU_EXACT_APPLY_ASYNC_OUTPUT_DOUBLE_BUFFER')
     pinned_writer_output = _env_flag('LOUDNORM_GPU_EXACT_OUTPUT_PINNED_WRITER')
     event_writer_output = _env_flag('LOUDNORM_GPU_EXACT_OUTPUT_EVENT_WRITER')
-    async_output_requested = _env_flag('LOUDNORM_GPU_EXACT_APPLY_ASYNC_OUTPUT') or _env_flag('LOUDNORM_GPU_EXACT_APPLY_ASYNC_OUTPUT_DIRECT') or async_output_double_buffer or pinned_writer_output or event_writer_output
+    async_output_requested = swr_downsampler is None and (_env_flag('LOUDNORM_GPU_EXACT_APPLY_ASYNC_OUTPUT') or _env_flag('LOUDNORM_GPU_EXACT_APPLY_ASYNC_OUTPUT_DIRECT') or async_output_double_buffer or pinned_writer_output or event_writer_output)
     if async_output_requested and has_async_apply_api(cuda):
         try:
             if event_writer_output and (async_writer is None or not hasattr(fo, 'write_cuda_event_borrowed') or not has_ctx_push_api(cuda)):
@@ -165,23 +185,34 @@ def _open_sync_apply_state(ctx, result, *, force_prefetch, unwind):
         try:
             borrowed_output = SyncPinnedBorrowedOutput(
                 cuda,
-                cfg.sizing.output_chunk_bytes,
+                writer_chunk_bytes,
                 _env_nonnegative_int('LOUDNORM_GPU_SYNC_OUTPUT_PINNED_BORROWED_SLOTS', 640),
             )
             unwind.callback(borrowed_output.cleanup, cuda, wait=False)
         except Exception:
             borrowed_output = None
     exact_prefetch_extra_chunks = _env_nonnegative_int('LOUDNORM_GPU_PAIR_FALLBACK_APPLY_PREFETCH_EXTRA_CHUNKS', 64) if force_prefetch else 2
-    exact_stream_window = ExactLimiterStreamWindow(
-        fi,
-        ctx.host_io.host_in,
-        frame_bytes=cfg.sizing.frame_bytes,
-        chunk_bytes=cfg.sizing.chunk_bytes,
-        apply_input_chunk_bytes=cfg.sizing.exact_apply_input_chunk_bytes,
-        prefetch_enabled=True if force_prefetch else None,
-        prefetch_extra_chunks=exact_prefetch_extra_chunks,
-        limit_frames=cfg.input_shape.total_frames if _env_flag('LOUDNORM_GPU_EXACT_STREAM_WINDOW_LIMIT_TOTAL_FRAMES') else None,
-    ) if cfg.root.streaming_io and cfg.loudnorm_mode.exact_limiter_active else None
+    if cfg.root.streaming_io and cfg.loudnorm_mode.exact_limiter_active and getattr(args, 'swr_upsample_48k_f32', False):
+        if args.rate != 192000 or args.input_format != 'f64le':
+            raise RuntimeError('--swr-upsample-48k-f32 requires --rate 192000 with f64le processing')
+        exact_stream_window = GpuSwrUpsamplingWindow(
+            ctx,
+            fi,
+            channels=args.channels,
+            apply_input_chunk_bytes=cfg.sizing.exact_apply_input_chunk_bytes,
+        )
+        unwind.callback(exact_stream_window.cleanup, cuda)
+    else:
+        exact_stream_window = ExactLimiterStreamWindow(
+            fi,
+            ctx.host_io.host_in,
+            frame_bytes=cfg.sizing.frame_bytes,
+            chunk_bytes=cfg.sizing.chunk_bytes,
+            apply_input_chunk_bytes=cfg.sizing.exact_apply_input_chunk_bytes,
+            prefetch_enabled=True if force_prefetch else None,
+            prefetch_extra_chunks=exact_prefetch_extra_chunks,
+            limit_frames=cfg.input_shape.total_frames if _env_flag('LOUDNORM_GPU_EXACT_STREAM_WINDOW_LIMIT_TOTAL_FRAMES') else None,
+        ) if cfg.root.streaming_io and cfg.loudnorm_mode.exact_limiter_active else None
     return SyncApplyState(
         active=True,
         done_bytes=0,
@@ -199,6 +230,7 @@ def _open_sync_apply_state(ctx, result, *, force_prefetch, unwind):
         exact_stream_window=exact_stream_window,
         async_output=async_output,
         borrowed_output=borrowed_output,
+        swr_downsampler=swr_downsampler,
     )
 
 
@@ -231,6 +263,9 @@ def close_sync_apply_state(ctx, result, state):
             result.apply_async_output_borrowed_peak_slots,
             getattr(state.borrowed_output, 'borrowed_peak_slots', 0),
         )
+    swr_downsampler = getattr(state, 'swr_downsampler', None)
+    if swr_downsampler is not None:
+        _run_cleanup(errors, swr_downsampler.cleanup, cuda)
     if state.async_writer is not None:
         result.apply_async_write = 1
         result.apply_async_write_worker_time += state.async_writer.worker_write_time

@@ -100,6 +100,34 @@ function createAudioCommandHelpers({
     ...(plan.channelLayout ? ["-channel_layout", plan.channelLayout] : []),
     "-ar", String(processingSampleRateFor(plan, values)),
   ];
+  const gpuSwrDownsample96kEnabled = envFlag("LOUDNORM_GPU_SWR_DOWNSAMPLE_96K_F32", true);
+  const usesGpuSwrDownsample96k = (plan, values) => {
+    if (!gpuSwrDownsample96kEnabled || !plan || !values) return false;
+    if (plan.rawInputFormat !== "f64le" || plan.rawGpuFormat !== "f64le") return false;
+    if (processingSampleRateFor(plan, values) !== 192000) return false;
+    const encodeRateArgs = encodeSampleRateArgsFor(plan, values);
+    return encodeRateArgs.length === 0 || (encodeRateArgs[0] === "-ar" && encodeRateArgs[1] === "96000");
+  };
+  const floatDecodeCodecs = new Set(["aac", "ac3", "eac3", "mp3", "opus", "vorbis", "wmav2", "pcm_f32le", "pcm_f32be"]);
+  const gpuSwrUpsample48kEnabled = envFlag("LOUDNORM_GPU_SWR_UPSAMPLE_48K_F32", true);
+  const usesGpuSwrUpsample48k = (plan, valuesOrRate) => {
+    if (!gpuSwrUpsample48kEnabled || !plan || originalSourceIngressSwr || needsInlineStereoDownmix(plan)) return false;
+    if (plan.rawInputFormat !== "f64le") return false;
+    const targetRate = typeof valuesOrRate === "number"
+      ? valuesOrRate
+      : processingSampleRateFor(plan, valuesOrRate);
+    if (plan.sourceSampleRate !== 48000 || targetRate !== 192000) return false;
+    if (plan.sourceSampleFmt) return plan.sourceSampleFmt === "fltp" || plan.sourceSampleFmt === "flt";
+    return floatDecodeCodecs.has(plan.sourceCodecName || "");
+  };
+  const streamingRawOutputFormatFor = (plan, values) => (
+    usesGpuSwrDownsample96k(plan, values) ? "f32le" : plan.rawGpuFormat
+  );
+  const streamingRawInputAudioArgs = (plan, values) => [
+    "-ac", String(plan.channels),
+    ...(plan.channelLayout ? ["-channel_layout", plan.channelLayout] : []),
+    "-ar", String(usesGpuSwrDownsample96k(plan, values) ? 96000 : processingSampleRateFor(plan, values)),
+  ];
   const chunkMiBFor = (plan) => (plan.stereoFallback && stereoFallbackChunkMiB ? stereoFallbackChunkMiB : defaultChunkMiB);
   const applyChunkMiBFor = (plan) => {
     if (plan.stereoFallback && stereoFallbackApplyChunkMiB) return stereoFallbackApplyChunkMiB;
@@ -138,6 +166,10 @@ function createAudioCommandHelpers({
     encodeSampleRateArgsFor,
     decodeAudioArgs,
     rawInputAudioArgs,
+    usesGpuSwrDownsample96k,
+    usesGpuSwrUpsample48k,
+    streamingRawOutputFormatFor,
+    streamingRawInputAudioArgs,
     chunkMiBFor,
     applyChunkMiBFor,
     cpuLoudnormProgressArgs,
@@ -175,6 +207,10 @@ function createPluginRuntimePlanContext({
     encodeSampleRateArgsFor,
     decodeAudioArgs,
     rawInputAudioArgs,
+    usesGpuSwrDownsample96k,
+    usesGpuSwrUpsample48k,
+    streamingRawOutputFormatFor,
+    streamingRawInputAudioArgs,
     chunkMiBFor,
     applyChunkMiBFor,
     buildCpuLoudnormMeasure,
@@ -207,6 +243,8 @@ function createPluginRuntimePlanContext({
     decodeAudioArgs,
     ingressSampleRateFor,
     processingSampleRateFor,
+    usesGpuSwrDownsample96k,
+    usesGpuSwrUpsample48k,
     targetI,
     targetLra,
     targetTp,
@@ -236,6 +274,10 @@ function createPluginRuntimePlanContext({
     ingressSampleRateFor,
     processingSampleRateFor,
     rawInputAudioArgs,
+    streamingRawInputAudioArgs,
+    streamingRawOutputFormatFor,
+    usesGpuSwrDownsample96k,
+    usesGpuSwrUpsample48k,
   };
 }
 

@@ -4,14 +4,20 @@ const path = require("node:path");
 const { mediaTools } = require("./mediaTools");
 const { verifyClockInWorker } = require("./mediaClockWorker");
 const { audioClockMaps } = require("./audioClockMaps");
+const { decoderIdentity } = require("./mediaEvidenceTools");
+const { sourceClockTickForPreparation } = require("./pipelinePreparationMap");
 
-async function verifyAudioOutputClock(args, candidateFile, audioSpecs, outputContract) {
+async function verifyAudioOutputClock(args, candidateFile, audioSpecs, outputContract, eofContext = null) {
   try {
     const audioMap = audioClockMaps(args, audioSpecs, outputContract);
     const tools = mediaTools(args);
+    const prober = decoderIdentity(tools.ffprobe);
+    const sourceClockTick = sourceClockTickForPreparation(args, (prober.native || prober).executable);
     args.jobLog("Verifying original-relative clocks, copied video and copied audio samples before output handoff.");
     const receipt = await verifyClockInWorker({ sourceFile: args.inputFileObj._id, candidateFile,
-      directory: path.dirname(candidateFile), ffmpegPath: tools.ffmpeg, ffprobePath: tools.ffprobe, audioMap, videoMap: null },
+      directory: path.dirname(candidateFile), ffmpegPath: tools.ffmpeg, ffprobePath: tools.ffprobe, audioMap, videoMap: null,
+      ...(eofContext ? { eofContext } : {}),
+      ...(sourceClockTick ? { sourceClockTick } : {}) },
     { onProgress: () => args.jobLog("Original-relative clock verification is still running; output remains unpublished.") });
     args.variables = { ...args.variables, gpuNormalizeAudioClock: receipt };
     const preparation = args.variables.mediaPipelinePreparationEvidence;

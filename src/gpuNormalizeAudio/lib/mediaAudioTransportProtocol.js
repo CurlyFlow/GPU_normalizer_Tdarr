@@ -58,6 +58,18 @@ function validateTransportReceipt(value, request) {
   validateIdentity(value.carrier.installed); validateIdentity(value.carrier.snapshot); validateIdentity(value.plan);
   assert.equal(value.carrier.installed.identity.sha256, value.carrier.snapshot.identity.sha256);
   assert.equal(value.plans.length, request.audioMap.length);
+  const hasEof = Object.hasOwn(request, "eofContext");
+  for (const item of value.plans) {
+    if (!hasEof) assert.equal(Object.hasOwn(item, "normalizedEof"), false, "Unexpected normalized EOF plan without EOF context");
+    else if (Object.hasOwn(item, "normalizedEof")) {
+      const eof = item.normalizedEof;
+      assert.ok(eof && Object.keys(eof).sort().join() === "decodedSamples,originalEnd,paddingSamples,validSamples"
+        && /^[1-9]\d*$/.test(eof.validSamples) && /^[1-9]\d*$/.test(eof.decodedSamples)
+        && /^\d+$/.test(eof.paddingSamples)
+        && BigInt(eof.validSamples) + BigInt(eof.paddingSamples) === BigInt(eof.decodedSamples));
+      validateDeclaredWindow({ input: eof.originalEnd, output: eof.originalEnd, shift: { numerator: "0", denominator: "1" } });
+    }
+  }
   encodeClockPlan(value.plans);
   validateFragmentCoverage(value.index, value.plans, videoMap.length);
   assert.equal(value.windows.length, request.audioMap.length);

@@ -1,0 +1,346 @@
+--- a/libavcodec/aacenc.h
++++ b/libavcodec/aacenc.h
+@@ -72,6 +72,7 @@
+     int pred;
+     int mid_side;
+     int intensity_stereo;
++    int mt_threads;
+ } AACEncOptions;
+ 
+ /**
+@@ -253,6 +254,8 @@
+     struct {
+         float *samples;
+     } buffer;
++
++    struct AACMtPool *mt_pool;
+ } AACEncContext;
+ 
+ void ff_quantize_band_cost_cache_init(struct AACEncContext *s);
+--- a/libavcodec/aacenc.c
++++ b/libavcodec/aacenc.c
+@@ -49,6 +49,7 @@
+ #include "aacenc.h"
+ #include "aacenctab.h"
+ #include "aacenc_utils.h"
++#include "aacenc_mt.h"
+ 
+ #include "psymodel.h"
+ 
+@@ -826,6 +827,121 @@
+     }
+ }
+ 
++typedef struct AACMtWinMdctArg {
++    AVCodecContext *avctx;
++    AACEncContext *s;
++    const AVFrame *frame;
++    FFPsyWindowInfo *windows;
++    SingleChannelElement *ch_sce[AAC_MAX_CHANNELS];
++    int ch_tag[AAC_MAX_CHANNELS];
++    _Atomic int err;
++} AACMtWinMdctArg;
++
++static void aac_mt_win_mdct_task(void *raw, int ch_idx)
++{
++    AACMtWinMdctArg *a = (AACMtWinMdctArg *)raw;
++    AACEncContext *s = a->s;
++    AACEncContext *wctx = &s->mt_pool->workers[ch_idx];
++    SingleChannelElement *sce = a->ch_sce[ch_idx];
++    IndividualChannelStream *ics = &sce->ics;
++    FFPsyWindowInfo *wi = &a->windows[ch_idx];
++    int tag = a->ch_tag[ch_idx];
++    float *overlap = &s->planar_samples[ch_idx][0];
++    float *samples2 = overlap + 1024;
++    float *la = a->frame ? (samples2 + (448 + 64)) : NULL;
++    float clip_avoidance_factor;
++    int w, k;
++
++    wctx->cur_channel = ch_idx;
++    if (tag == TYPE_LFE) {
++        wi->window_type[0] = wi->window_type[1] = ONLY_LONG_SEQUENCE;
++        wi->window_shape   = 0;
++        wi->num_windows    = 1;
++        wi->grouping[0]    = 1;
++        wi->clipping[0]    = 0;
++        ics->num_swb = s->samplerate_index >= 8 ? 1 : 3;
++    } else {
++        *wi = s->psy.model->window(&s->psy, samples2, la, ch_idx,
++                                   ics->window_sequence[0]);
++    }
++    ics->window_sequence[1] = ics->window_sequence[0];
++    ics->window_sequence[0] = wi->window_type[0];
++    ics->use_kb_window[1]   = ics->use_kb_window[0];
++    ics->use_kb_window[0]   = wi->window_shape;
++    ics->num_windows        = wi->num_windows;
++    ics->swb_sizes          = s->psy.bands[ics->num_windows == 8];
++    ics->num_swb            = tag == TYPE_LFE ? ics->num_swb : s->psy.num_bands[ics->num_windows == 8];
++    ics->max_sfb            = FFMIN(ics->max_sfb, ics->num_swb);
++    ics->swb_offset         = wi->window_type[0] == EIGHT_SHORT_SEQUENCE ?
++                                ff_swb_offset_128[s->samplerate_index] :
++                                ff_swb_offset_1024[s->samplerate_index];
++    ics->tns_max_bands      = wi->window_type[0] == EIGHT_SHORT_SEQUENCE ?
++                                ff_tns_max_bands_128[s->samplerate_index] :
++                                ff_tns_max_bands_1024[s->samplerate_index];
++
++    for (w = 0; w < ics->num_windows; w++)
++        ics->group_len[w] = wi->grouping[w];
++
++    clip_avoidance_factor = 0.0f;
++    for (w = 0; w < ics->num_windows; w++) {
++        const float *wbuf = overlap + w * 128;
++        const int wlen = 2048 / ics->num_windows;
++        float max = 0;
++        int j;
++        for (j = 0; j < wlen; j++)
++            max = FFMAX(max, fabsf(wbuf[j]));
++        wi->clipping[w] = max;
++    }
++    for (w = 0; w < ics->num_windows; w++) {
++        if (wi->clipping[w] > CLIP_AVOIDANCE_FACTOR) {
++            ics->window_clipping[w] = 1;
++            clip_avoidance_factor = FFMAX(clip_avoidance_factor, wi->clipping[w]);
++        } else {
++            ics->window_clipping[w] = 0;
++        }
++    }
++    if (clip_avoidance_factor > CLIP_AVOIDANCE_FACTOR) {
++        ics->clip_avoidance_factor = CLIP_AVOIDANCE_FACTOR / clip_avoidance_factor;
++    } else {
++        ics->clip_avoidance_factor = 1.0f;
++    }
++
++    apply_window_and_mdct(wctx, sce, overlap);
++
++    for (k = 0; k < 1024; k++) {
++        if (!(fabs(sce->coeffs[k]) < 1E16)) {
++            atomic_store_explicit(&a->err, AVERROR(EINVAL), memory_order_relaxed);
++            return;
++        }
++    }
++    avoid_clipping(wctx, sce);
++}
++
++typedef struct AACMtTwoloopArg {
++    AVCodecContext *avctx;
++    AACEncContext *s;
++    SingleChannelElement *ch_sce[AAC_MAX_CHANNELS];
++    int ch_tag[AAC_MAX_CHANNELS];
++    int ch_alloc[AAC_MAX_CHANNELS];
++    int bitres_bits;
++    int psy_cutoff;
++    float lambda;
++} AACMtTwoloopArg;
++
++static void aac_mt_twoloop_task(void *raw, int ch_idx)
++{
++    AACMtTwoloopArg *a = (AACMtTwoloopArg *)raw;
++    AACEncContext *wctx = &a->s->mt_pool->workers[ch_idx];
++
++    wctx->cur_channel = ch_idx;
++    wctx->cur_type = a->ch_tag[ch_idx];
++    wctx->lambda = a->lambda;
++    wctx->psy.bitres.alloc = a->ch_alloc[ch_idx];
++    wctx->psy.bitres.bits = a->bitres_bits;
++    wctx->psy.cutoff = a->psy_cutoff;
++    wctx->coder->search_for_quantizers(a->avctx, wctx, a->ch_sce[ch_idx], a->lambda);
++}
++
+ static int aac_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
+                             const AVFrame *frame, int *got_packet_ptr)
+ {
+@@ -856,6 +972,30 @@
+     if (!avctx->frame_num)
+         return 0;
+ 
++    if (s->mt_pool && !s->options.ltp) {
++        AACMtWinMdctArg win_arg;
++        win_arg.avctx = avctx;
++        win_arg.s = s;
++        win_arg.frame = frame;
++        win_arg.windows = windows;
++        atomic_init(&win_arg.err, 0);
++        start_ch = 0;
++        for (i = 0; i < s->chan_map[0]; i++) {
++            tag   = s->chan_map[i+1];
++            chans = tag == TYPE_CPE ? 2 : 1;
++            cpe   = &s->cpe[i];
++            for (ch = 0; ch < chans; ch++) {
++                win_arg.ch_sce[start_ch + ch] = &cpe->ch[ch];
++                win_arg.ch_tag[start_ch + ch] = tag;
++            }
++            start_ch += chans;
++        }
++        aac_mt_dispatch(s->mt_pool, aac_mt_win_mdct_task, &win_arg);
++        if (atomic_load_explicit(&win_arg.err, memory_order_relaxed)) {
++            av_log(avctx, AV_LOG_ERROR, "Input contains (near) NaN/+-Inf\n");
++            return AVERROR(EINVAL);
++        }
++    } else {
+     start_ch = 0;
+     for (i = 0; i < s->chan_map[0]; i++) {
+         FFPsyWindowInfo* wi = windows + start_ch;
+@@ -951,6 +1091,7 @@
+         }
+         start_ch += chans;
+     }
++    }
+     if ((ret = ff_alloc_packet(avctx, avpkt, 8192 * s->channels)) < 0)
+         return ret;
+     frame_bits = its = 0;
+@@ -962,6 +1103,121 @@
+         start_ch = 0;
+         target_bits = 0;
+         memset(chan_el_counter, 0, sizeof(chan_el_counter));
++        if (s->mt_pool && avctx->frame_num >= 2 && !(avctx->flags & AV_CODEC_FLAG_QSCALE)
++            && !s->options.ltp && !s->options.pred) {
++            AACMtTwoloopArg tl_arg;
++            int elem_start_ch[16];
++            tl_arg.avctx = avctx;
++            tl_arg.s = s;
++            tl_arg.bitres_bits = s->last_frame_pb_count / s->channels;
++            tl_arg.psy_cutoff = s->psy.cutoff;
++            tl_arg.lambda = s->lambda;
++            start_ch = 0;
++            for (i = 0; i < s->chan_map[0]; i++) {
++                FFPsyWindowInfo *wi = windows + start_ch;
++                const float *coeffs[2];
++                tag   = s->chan_map[i+1];
++                chans = tag == TYPE_CPE ? 2 : 1;
++                cpe   = &s->cpe[i];
++                elem_start_ch[i] = start_ch;
++                cpe->common_window = 0;
++                memset(cpe->is_mask, 0, sizeof(cpe->is_mask));
++                memset(cpe->ms_mask, 0, sizeof(cpe->ms_mask));
++                for (ch = 0; ch < chans; ch++) {
++                    sce = &cpe->ch[ch];
++                    coeffs[ch] = sce->coeffs;
++                    sce->ics.predictor_present = 0;
++                    sce->ics.ltp.present = 0;
++                    memset(sce->ics.ltp.used, 0, sizeof(sce->ics.ltp.used));
++                    memset(sce->ics.prediction_used, 0, sizeof(sce->ics.prediction_used));
++                    memset(&sce->tns, 0, sizeof(TemporalNoiseShaping));
++                    for (w = 0; w < 128; w++)
++                        if (sce->band_type[w] > RESERVED_BT)
++                            sce->band_type[w] = 0;
++                }
++                s->psy.bitres.alloc = -1;
++                s->psy.bitres.bits = s->last_frame_pb_count / s->channels;
++                s->psy.model->analyze(&s->psy, start_ch, coeffs, wi);
++                if (s->psy.bitres.alloc > 0) {
++                    target_bits += s->psy.bitres.alloc
++                        * (s->lambda / (avctx->global_quality ? avctx->global_quality : 120));
++                    s->psy.bitres.alloc /= chans;
++                }
++                s->cur_type = tag;
++                for (ch = 0; ch < chans; ch++) {
++                    s->cur_channel = start_ch + ch;
++                    if (s->options.pns && s->coder->mark_pns)
++                        s->coder->mark_pns(s, avctx, &cpe->ch[ch]);
++                    tl_arg.ch_sce[start_ch + ch] = &cpe->ch[ch];
++                    tl_arg.ch_tag[start_ch + ch] = tag;
++                    tl_arg.ch_alloc[start_ch + ch] = s->psy.bitres.alloc;
++                }
++                start_ch += chans;
++            }
++            aac_mt_dispatch(s->mt_pool, aac_mt_twoloop_task, &tl_arg);
++            s->psy.cutoff = s->mt_pool->workers[s->channels - 1].psy.cutoff;
++            for (i = 0; i < s->chan_map[0]; i++) {
++                FFPsyWindowInfo *wi;
++                start_ch = elem_start_ch[i];
++                wi    = windows + start_ch;
++                tag   = s->chan_map[i+1];
++                chans = tag == TYPE_CPE ? 2 : 1;
++                cpe   = &s->cpe[i];
++                put_bits(&s->pb, 3, tag);
++                put_bits(&s->pb, 4, chan_el_counter[tag]++);
++                s->cur_type = tag;
++                if (chans > 1
++                    && wi[0].window_type[0] == wi[1].window_type[0]
++                    && wi[0].window_shape   == wi[1].window_shape) {
++                    cpe->common_window = 1;
++                    for (w = 0; w < wi[0].num_windows; w++) {
++                        if (wi[0].grouping[w] != wi[1].grouping[w]) {
++                            cpe->common_window = 0;
++                            break;
++                        }
++                    }
++                }
++                for (ch = 0; ch < chans; ch++) {
++                    sce = &cpe->ch[ch];
++                    s->cur_channel = start_ch + ch;
++                    if (s->options.tns && s->coder->search_for_tns)
++                        s->coder->search_for_tns(s, sce);
++                    if (s->options.tns && s->coder->apply_tns_filt)
++                        s->coder->apply_tns_filt(s, sce);
++                    if (sce->tns.present)
++                        tns_mode = 1;
++                    if (s->options.pns && s->coder->search_for_pns)
++                        s->coder->search_for_pns(s, avctx, sce);
++                }
++                s->cur_channel = start_ch;
++                if (s->options.intensity_stereo) {
++                    if (s->coder->search_for_is)
++                        s->coder->search_for_is(s, avctx, cpe);
++                    if (cpe->is_mode) is_mode = 1;
++                    apply_intensity_stereo(cpe);
++                }
++                if (s->options.mid_side) {
++                    if (s->options.mid_side == -1 && s->coder->search_for_ms)
++                        s->coder->search_for_ms(s, cpe);
++                    else if (cpe->common_window)
++                        memset(cpe->ms_mask, 1, sizeof(cpe->ms_mask));
++                    apply_mid_side_stereo(cpe);
++                }
++                adjust_frame_information(cpe, chans);
++                if (chans == 2) {
++                    put_bits(&s->pb, 1, cpe->common_window);
++                    if (cpe->common_window) {
++                        put_ics_info(s, &cpe->ch[0].ics);
++                        encode_ms_info(&s->pb, cpe);
++                        if (cpe->ms_mode) ms_mode = 1;
++                    }
++                }
++                for (ch = 0; ch < chans; ch++) {
++                    s->cur_channel = start_ch + ch;
++                    encode_individual_channel(avctx, s, &cpe->ch[ch], cpe->common_window);
++                }
++            }
++        } else {
+         for (i = 0; i < s->chan_map[0]; i++) {
+             FFPsyWindowInfo* wi = windows + start_ch;
+             const float *coeffs[2];
+@@ -1088,6 +1344,7 @@
+             }
+             start_ch += chans;
+         }
++        }
+ 
+         if (avctx->flags & AV_CODEC_FLAG_QSCALE) {
+             /* When using a constant Q-scale, don't mess with lambda */
+@@ -1189,6 +1446,7 @@
+ 
+     av_log(avctx, AV_LOG_INFO, "Qavg: %.3f\n", s->lambda_count ? s->lambda_sum / s->lambda_count : NAN);
+ 
++    aac_mt_free(s);
+     av_tx_uninit(&s->mdct1024);
+     av_tx_uninit(&s->mdct128);
+     ff_psy_end(&s->psy);
+@@ -1386,6 +1644,9 @@
+ 
+     ff_af_queue_init(avctx, &s->afq);
+ 
++    if ((ret = aac_mt_init(s, s->options.mt_threads > 1 ? s->options.mt_threads : avctx->thread_count)) < 0)
++        return ret;
++
+     return 0;
+ }
+ 
+@@ -1402,6 +1663,7 @@
+     {"aac_ltp", "Long term prediction", offsetof(AACEncContext, options.ltp), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, AACENC_FLAGS},
+     {"aac_pred", "AAC-Main prediction", offsetof(AACEncContext, options.pred), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, AACENC_FLAGS},
+     {"aac_pce", "Forces the use of PCEs", offsetof(AACEncContext, options.pce), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, AACENC_FLAGS},
++    {"aac_mt_threads", "Per-channel worker threads", offsetof(AACEncContext, options.mt_threads), AV_OPT_TYPE_INT, {.i64 = 1}, 1, AAC_MAX_CHANNELS, AACENC_FLAGS},
+     FF_AAC_PROFILE_OPTS
+     {NULL}
+ };

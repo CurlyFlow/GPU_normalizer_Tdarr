@@ -20,6 +20,8 @@ function createRuntimePlanBuilders({
   decodeAudioArgs,
   ingressSampleRateFor,
   processingSampleRateFor,
+  usesGpuSwrDownsample96k = null,
+  usesGpuSwrUpsample48k = null,
   targetI,
   targetLra,
   targetTp,
@@ -69,9 +71,12 @@ function createRuntimePlanBuilders({
   );
 
   const buildGpuFirstPassInputMeasureArgv = (plan, statsSampleRate, statsCache, writeStatsCache, decodeCommandOverride = null) => {
+    const useSwr48k = Boolean(usesGpuSwrUpsample48k && usesGpuSwrUpsample48k(plan, statsSampleRate) && !decodeCommandOverride);
     const decodeCommand = decodeCommandOverride || [
       String(ffmpegPath), "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-y", "-i", String(plan.sourceInput),
-      "-map", `0:a:${plan.sourceAudioIdx}`, "-vn", "-sn", "-dn", ...runtimeSpecPolicy.firstPassDecodeAudioArgs(plan), "-ar", String(statsSampleRate), "-f", plan.rawInputFormat, "pipe:1",
+      "-map", `0:a:${plan.sourceAudioIdx}`, "-vn", "-sn", "-dn", ...runtimeSpecPolicy.firstPassDecodeAudioArgs(plan),
+      "-ar", String(useSwr48k ? 48000 : statsSampleRate),
+      "-f", useSwr48k ? "f32le" : plan.rawInputFormat, "pipe:1",
     ];
     const ratePlan = runtimeSpecPolicy.ratePlanFor(plan, null);
     return [
@@ -84,6 +89,7 @@ function createRuntimePlanBuilders({
       "--ffmpeg-limiter", "--stats-cache-only", "--emit-first-pass-input-json",
       ...(writeStatsCache ? ["--stats-cache-output", statsCache] : []),
       ...(ratePlan.stereoFallbackSourceExact ? ["--stereo-fallback-source-exact"] : []),
+      ...(useSwr48k ? ["--swr-upsample-48k-f32"] : []),
     ];
   };
 
@@ -125,6 +131,8 @@ function createRuntimePlanBuilders({
       "--encode-command-json", JSON.stringify(encodeCommand),
       ...(statsCacheInput ? ["--stats-cache-input", statsCacheInput] : []),
       ...(ratePlan.stereoFallbackSourceExact ? ["--stereo-fallback-source-exact"] : []),
+      ...(usesGpuSwrDownsample96k && usesGpuSwrDownsample96k(plan, cpuLoudnormValues) ? ["--swr-downsample-96k-f32"] : []),
+      ...(usesGpuSwrUpsample48k && usesGpuSwrUpsample48k(plan, cpuLoudnormValues) ? ["--swr-upsample-48k-f32"] : []),
     ];
   };
 
@@ -162,6 +170,8 @@ function createRuntimePlanBuilders({
       "--paired-apply-encode-command-json", JSON.stringify(partnerEncodeCommand),
       "--paired-apply-stats-cache-input", partnerStatsCacheInput,
       ...(partnerRatePlan.stereoFallbackSourceExact ? ["--paired-apply-stereo-fallback-source-exact"] : []),
+      ...(usesGpuSwrDownsample96k && usesGpuSwrDownsample96k(partnerPlan, partnerValues) ? ["--paired-apply-swr-downsample-96k-f32"] : []),
+      ...(usesGpuSwrUpsample48k && usesGpuSwrUpsample48k(partnerPlan, partnerValues) ? ["--paired-apply-swr-upsample-48k-f32"] : []),
     ];
   };
 

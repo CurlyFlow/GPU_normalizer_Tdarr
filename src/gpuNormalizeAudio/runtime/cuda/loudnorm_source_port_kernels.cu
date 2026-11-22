@@ -6,6 +6,7 @@
 #include "loudnorm_gain_plan_kernels.cuh"
 #include "loudnorm_limiter_peak_helpers.cuh"
 #include "loudnorm_true_peak_limiter.cuh"
+#include "loudnorm_parallel_limiter_helpers.cuh"
 #include "loudnorm_stream_feedback_state.cuh"
 #include "loudnorm_safe_feedback_prefill_kernels.cuh"
 #include "loudnorm_safe_feedback_apply_kernels.cuh"
@@ -14,3 +15,4 @@
 #include "loudnorm_source_precompute_base_kernels.cuh"
 #include "loudnorm_source_precompute_exact_kernels.cuh"
 #include "loudnorm_feedback_apply_kernels.cuh"
+#include "loudnorm_swr_downsample_kernels.cuh"

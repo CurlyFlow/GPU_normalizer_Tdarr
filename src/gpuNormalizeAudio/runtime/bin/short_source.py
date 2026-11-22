@@ -78,13 +78,23 @@ def run_short_first_frame(ctx, result, state):
             chk(cuda.cuLaunchKernel(kernel, grid, 1, 1, block, 1, 1, 0, None, parameters, None), 'cuLaunchKernel(short FIRST_FRAME)')
         chk(cuda.cuCtxSynchronize(), 'cuCtxSynchronize(short FIRST_FRAME)')
         result.apply_kernel_time += time.perf_counter() - t0
+        out_dev_ptr = output.value
+        out_size = size
+        if state.swr_downsampler is not None:
+            out_dev_ptr, out_size = state.swr_downsampler.process_chunk(
+                ctx,
+                result,
+                src_dev_ptr=output.value,
+                chunk_frames=frames,
+                is_final=True,
+            )
         t0 = time.perf_counter()
-        chk(cuda.cuMemcpyDtoH_v2(ctypes.cast(host, ctypes.c_void_p), ctypes.c_void_p(output.value), size), 'cuMemcpyDtoH(short)')
+        chk(cuda.cuMemcpyDtoH_v2(ctypes.cast(host, ctypes.c_void_p), ctypes.c_void_p(out_dev_ptr), out_size), 'cuMemcpyDtoH(short)')
         elapsed = time.perf_counter() - t0
         result.apply_d2h_time += elapsed
         result.total_d2h_time += elapsed
         t0 = time.perf_counter()
-        state.fo.write(memoryview(host).cast('B'))
+        state.fo.write(memoryview(host).cast('B')[:out_size])
         result.apply_write_time += time.perf_counter() - t0
     state.done_bytes = size
     state.frame_offset = frames

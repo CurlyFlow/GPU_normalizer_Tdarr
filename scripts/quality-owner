@@ -4,7 +4,19 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-mapfile -t release_roots < <(printf '%s\n' FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio/* | sort -V)
+if [[ ${QUALITY_SERIAL:-0} != 1 && -f "$repo_root/tools/wrapper-quality-runner.mjs" && -f "$repo_root/../../tools/wrapper/scheduler.mjs" ]]; then
+  exec node "$repo_root/tools/wrapper-quality-runner.mjs"
+fi
+
+mapfile -t release_roots < <(
+  for base in FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio FlowPlugins/CommunityFlowPlugins/audio/gpuNormalizeAudio; do
+    [[ -d "$base" ]] || continue
+    for dir in "$base"/*; do
+      [[ -d "$dir" ]] || continue
+      printf '%s\t%s\n' "$(basename "$dir")" "$dir"
+    done
+  done | sort -k1,1V | cut -f2
+)
 if [[ ${#release_roots[@]} -eq 0 || ! -d "${release_roots[-1]}" ]]; then
   printf 'No tracked GPU Normalize Audio release snapshot found.\n' >&2
   exit 1
@@ -62,6 +74,7 @@ fi
 
 printf 'quality: shell syntax\n'
 shell_files=(scripts/quality-check scripts/quality-owner)
+[[ -f install.sh ]] && shell_files+=(install.sh)
 [[ -f work/tdarr ]] && shell_files+=(work/tdarr)
 for shell_file in work/tdarr.d/*.sh; do
   [[ -f "$shell_file" ]] && shell_files+=("$shell_file")

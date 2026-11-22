@@ -1,8 +1,10 @@
 "use strict";
 
+const fs = require("node:fs");
+const path = require("node:path");
 const { intNum } = require("./common");
 const { renderShellCommand } = require("./commandRenderer");
-const { privateAacMovieArgs } = require("./outputAudioSpecs");
+const { AAC_MOVIE_TIMESCALE, privateAacMovieArgs } = require("./outputAudioSpecs");
 const {
   createOutputFinalizer,
 } = require("./outputFinalizer");
@@ -46,23 +48,72 @@ function createStreamingCommandBuilders({
   encodeSampleRateArgsFor,
   encodeThreadArgs,
   ingressSampleRateFor,
-  processingSampleRateFor,
   rawInputAudioArgs,
+  streamingRawInputAudioArgs,
+  streamingRawOutputFormatFor,
+  usesGpuSwrUpsample48k,
 }) {
   const stereoFallbackStreamingFilterThreads = Math.max(0, Math.min(64, intNum(process.env.LOUDNORM_GPU_STEREO_FALLBACK_STREAMING_FILTER_THREADS, 0)));
   const stereoFallbackFilterThreadArgs = (plan) => (plan.stereoFallback && stereoFallbackStreamingFilterThreads > 0
     ? ["-filter_threads", String(stereoFallbackStreamingFilterThreads), "-filter_complex_threads", String(stereoFallbackStreamingFilterThreads)]
     : []);
 
-  const buildStreamingDecodeCommand = (plan, values) => [
-    String(args.ffmpegPath), "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-y", ...stereoFallbackFilterThreadArgs(plan), "-i", String(plan.sourceInput),
-    "-map", `0:a:${plan.sourceAudioIdx}`, "-vn", "-sn", "-dn", ...decodeAudioArgs(plan), "-ar", String(ingressSampleRateFor(plan, values)), "-f", plan.rawInputFormat, "pipe:1",
-  ];
+  const buildStreamingDecodeCommand = (plan, values) => {
+    const gpuUpsample48k = Boolean(usesGpuSwrUpsample48k && usesGpuSwrUpsample48k(plan, values));
+    return [
+      String(args.ffmpegPath), "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-y", ...stereoFallbackFilterThreadArgs(plan), "-i", String(plan.sourceInput),
+      "-map", `0:a:${plan.sourceAudioIdx}`, "-vn", "-sn", "-dn", ...decodeAudioArgs(plan),
+      "-ar", String(gpuUpsample48k ? 48000 : ingressSampleRateFor(plan, values)),
+      "-f", gpuUpsample48k ? "f32le" : plan.rawInputFormat, "pipe:1",
+    ];
+  };
 
-  const buildStreamingEncodeCommand = (plan, values) => [
-    String(args.ffmpegPath), "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-y", ...stereoFallbackFilterThreadArgs(plan), "-f", plan.rawGpuFormat, ...rawInputAudioArgs(plan, values),
-    "-i", "pipe:0", ...encodeSampleRateArgsFor(plan, values), ...encodeThreadArgs(plan), "-c:a", "aac", "-b:a", audioBitrate, ...privateAacMovieArgs(plan.normalizedAudio), plan.normalizedAudio,
-  ];
+  const outputFormatFor = streamingRawOutputFormatFor || ((plan) => plan.rawGpuFormat);
+  const inputAudioArgsFor = streamingRawInputAudioArgs || rawInputAudioArgs;
+  const aacEncodeMtBin = typeof __dirname === "string"
+    ? path.resolve(__dirname, "../runtime/bin/aac_encode_mt")
+    : "";
+  const aacEncodeMtAvailable = Boolean(aacEncodeMtBin)
+    && process.env.LOUDNORM_GPU_AAC_ENCODE_MT !== "0"
+    && fs.existsSync(aacEncodeMtBin);
+  const aacEncodeMtThreadsOverride = intNum(process.env.LOUDNORM_GPU_AAC_ENCODE_MT_THREADS, 0);
+  const aacEncodeMtSupportedRates = new Set([96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000]);
+  const aacEncodeMtSupportedLayouts = new Set(["", "stereo", "3.0", "4.0", "5.0", "5.0(side)", "5.1", "5.1(side)", "7.1", "7.1(wide)"]);
+  const buildStreamingEncodeCommand = (plan, values) => {
+    const rawFmt = outputFormatFor(plan, values);
+    const inArgs = inputAudioArgsFor(plan, values);
+    const outRateArgs = encodeSampleRateArgsFor(plan, values);
+    if (aacEncodeMtAvailable && (rawFmt === "f32le" || rawFmt === "f64le")
+        && /\.(?:m4a|mp4)$/i.test(String(plan.normalizedAudio || ""))
+        && plan.channels >= 2 && plan.channels <= 16) {
+      const arIdx = inArgs.indexOf("-ar");
+      const acIdx = inArgs.indexOf("-ac");
+      const clIdx = inArgs.indexOf("-channel_layout");
+      const inRate = arIdx >= 0 ? Number(inArgs[arIdx + 1]) : 0;
+      const inCh = acIdx >= 0 ? Number(inArgs[acIdx + 1]) : 0;
+      const inLayout = clIdx >= 0 ? String(inArgs[clIdx + 1] || "") : "";
+      const rawOutRate = outRateArgs[0] === "-ar" && outRateArgs[1] ? Number(outRateArgs[1]) : inRate;
+      const outRate = rawOutRate > 96000 ? 96000 : rawOutRate;
+      if (inRate > 0 && aacEncodeMtSupportedRates.has(outRate)
+          && inCh >= 2 && inCh <= 16 && aacEncodeMtSupportedLayouts.has(inLayout)) {
+        const defaultThreads = inCh === 6 ? 5 : Math.min(inCh, 6);
+        const threads = aacEncodeMtThreadsOverride > 0
+          ? Math.min(aacEncodeMtThreadsOverride, inCh)
+          : defaultThreads;
+        return [
+          aacEncodeMtBin, "-f", rawFmt, "-ar", String(inRate), "-out_ar", String(outRate),
+          "-ac", String(inCh), ...(inLayout ? ["-channel_layout", inLayout] : []),
+          "-b", String(audioBitrate),
+          "-movie_timescale", String(AAC_MOVIE_TIMESCALE),
+          "-threads", String(threads), "-i", "pipe:0", "-o", String(plan.normalizedAudio),
+        ];
+      }
+    }
+    return [
+      String(args.ffmpegPath), "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-y", ...stereoFallbackFilterThreadArgs(plan), "-f", rawFmt, ...inArgs,
+      "-i", "pipe:0", ...outRateArgs, ...encodeThreadArgs(plan), "-c:a", "aac", "-b:a", audioBitrate, ...privateAacMovieArgs(plan.normalizedAudio), plan.normalizedAudio,
+    ];
+  };
 
   return {
     buildStreamingDecodeCommand,
@@ -76,6 +127,7 @@ function createCommandBuilders(model, runtimeContext) {
   const { sampleRate, targetI, targetLra, targetTp, audioBitrate, encodeThreadArgs } = model.runtimeConfig.audioConfig;
   const {
     decodeAudioArgs, ingressSampleRateFor, processingSampleRateFor, rawInputAudioArgs,
+    streamingRawInputAudioArgs, streamingRawOutputFormatFor, usesGpuSwrUpsample48k,
     encodeSampleRateArgsFor, applyChunkMiBFor,
   } = runtimeContext;
   const streamingBuilders = createStreamingCommandBuilders({
@@ -85,8 +137,10 @@ function createCommandBuilders(model, runtimeContext) {
     encodeSampleRateArgsFor,
     encodeThreadArgs,
     ingressSampleRateFor,
-    processingSampleRateFor,
     rawInputAudioArgs,
+    streamingRawInputAudioArgs,
+    streamingRawOutputFormatFor,
+    usesGpuSwrUpsample48k,
   });
 
   const buildRawDecodeCommand = (plan, values) => renderShellCommand([

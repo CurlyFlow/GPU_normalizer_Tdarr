@@ -14,7 +14,7 @@ from stats_source_stage import (
     _trim_source_exact_stage,
     _trim_source_exact_stage_fixed,
 )
-from stream_chunk_reader import FrameChunkReader
+from stream_ingress_resample import frame_chunk_reader_for
 
 
 _NATIVE_LIB = None
@@ -83,6 +83,37 @@ def _load_native_lib():
         ctypes.POINTER(ctypes.c_double),
     ]
     output_fn.restype = ctypes.c_int
+    swr48k_fn = lib.opx_loudnorm_channel_stats_48k_f32_to_192k_process
+    swr48k_fn.argtypes = [
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_uint32,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+        ctypes.POINTER(ctypes.c_double),
+    ]
+    swr48k_fn.restype = ctypes.c_int
+    swr48k_slice_fn = lib.opx_loudnorm_swr_48k_f32_to_192k_f64_slice
+    swr48k_slice_fn.argtypes = [
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.c_uint32,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_float),
+        ctypes.POINTER(ctypes.c_double),
+    ]
+    swr48k_slice_fn.restype = ctypes.c_int
     try:
         gain_fn = lib.opx_loudnorm_gain_plan_f64_process
     except AttributeError:
@@ -189,6 +220,163 @@ def native_channel_stats_supported(ctx, source_stage_config):
     return True
 
 
+def _run_native_channel_stats_48k_f32_pass(
+    ctx,
+    result,
+    lib,
+    channel_sums,
+    peaks,
+    states,
+    channel_sums_ptr,
+    peaks_ptr,
+    states_ptr,
+    b_ptr,
+    a_ptr,
+    audit_tail,
+):
+    from stream_processes import close_decode_pass, start_decode_pass
+    from swr_input_upsample import (
+        SWR_48K_TO_192K_CENTER,
+        SWR_48K_TO_192K_PHASES,
+        SWR_48K_TO_192K_RIGHT_RADIUS,
+        SWR_48K_TO_192K_TAPS,
+        build_swr_48k_to_192k_filters,
+        swr_48k_to_192k_ready_output_end,
+    )
+
+    args = ctx.args
+    cfg = ctx.cfg
+    in_frame_bytes = args.channels * 4
+    out_frame_bytes = args.channels * 8
+    fpw = cfg.input_shape.frames_per_window
+    filt = build_swr_48k_to_192k_filters()
+    filt_arr = (ctypes.c_float * (SWR_48K_TO_192K_PHASES * SWR_48K_TO_192K_TAPS))(*filt)
+    filt_ptr = ctypes.cast(filt_arr, ctypes.POINTER(ctypes.c_float))
+
+    read_chunk_frames = 48000
+    read_chunk_bytes = read_chunk_frames * in_frame_bytes
+    halo_left = SWR_48K_TO_192K_CENTER + 1
+    audit_tail_out_frames = (cfg.sizing.audit_input_tail_bytes // out_frame_bytes) if audit_tail is not None else 0
+    keep_extra_in_frames = ((audit_tail_out_frames + 3) // 4) + halo_left + SWR_48K_TO_192K_RIGHT_RADIUS + 4 if audit_tail_out_frames > 0 else halo_left
+    window_buf = bytearray()
+    window_start_in_frame = 0
+    received_in_frames = 0
+    emitted_out_frames = 0
+    max_windows = len(peaks)
+
+    label = 'streaming decode native channel stats 48k f32'
+    proc, handle = start_decode_pass(args, cfg.root.streaming_io, cfg.input_shape.decode_command, label)
+    try:
+        while True:
+            raw = handle.read(read_chunk_bytes)
+            if not raw:
+                break
+            window_buf.extend(raw)
+            usable_bytes = (len(window_buf) // in_frame_bytes) * in_frame_bytes
+            if usable_bytes == 0:
+                continue
+            window_in_frames = usable_bytes // in_frame_bytes
+            received_in_frames = window_start_in_frame + window_in_frames
+            ready_end = swr_48k_to_192k_ready_output_end(received_in_frames, None, is_final=False)
+            ready_end = (ready_end // 4) * 4
+            if ready_end > emitted_out_frames:
+                last_w = (ready_end - 1) // fpw
+                if last_w >= max_windows:
+                    raise RuntimeError(f'native 48k channel stats window overflow: {last_w} >= {max_windows}')
+                buf_ptr = ctypes.cast(ctypes.addressof(ctypes.c_char.from_buffer(window_buf)), ctypes.POINTER(ctypes.c_float))
+                stage_t0 = time.perf_counter()
+                code = lib.opx_loudnorm_channel_stats_48k_f32_to_192k_process(
+                    buf_ptr,
+                    ctypes.c_uint32(window_in_frames),
+                    ctypes.c_uint64(window_start_in_frame),
+                    ctypes.c_uint64(received_in_frames),
+                    ctypes.c_uint64(emitted_out_frames),
+                    ctypes.c_uint64(ready_end),
+                    ctypes.c_uint32(args.channels),
+                    ctypes.c_uint32(fpw),
+                    filt_ptr,
+                    channel_sums_ptr,
+                    peaks_ptr,
+                    states_ptr,
+                    b_ptr,
+                    a_ptr,
+                )
+                native_dt = time.perf_counter() - stage_t0
+                if code != 0:
+                    raise RuntimeError(f'native 48k channel stats failed with code {code}')
+                result.stats_sums_kernel_time += native_dt
+                result.stats_sums_wall_time += native_dt
+                emitted_out_frames = ready_end
+
+                keep_from_in = max(window_start_in_frame, received_in_frames - keep_extra_in_frames)
+                keep_from_in = min(keep_from_in, max(window_start_in_frame, (emitted_out_frames // 4) - halo_left))
+                drop_in = keep_from_in - window_start_in_frame
+                if drop_in > 0:
+                    del window_buf[:drop_in * in_frame_bytes]
+                    window_start_in_frame = keep_from_in
+                ctx.emit_progress('stats_sums', 0.70 * ((emitted_out_frames * out_frame_bytes) / float(max(1, cfg.input_shape.nbytes))))
+
+        if len(window_buf) % in_frame_bytes != 0:
+            raise RuntimeError('streaming native 48k channel stats ended with a partial frame')
+        window_in_frames = len(window_buf) // in_frame_bytes
+        received_in_frames = window_start_in_frame + window_in_frames
+        final_end = swr_48k_to_192k_ready_output_end(received_in_frames, received_in_frames, is_final=True)
+        if final_end > emitted_out_frames:
+            last_w = (final_end - 1) // fpw
+            if last_w >= max_windows:
+                raise RuntimeError(f'native 48k channel stats final window overflow: {last_w} >= {max_windows}')
+            buf_ptr = ctypes.cast(ctypes.addressof(ctypes.c_char.from_buffer(window_buf)), ctypes.POINTER(ctypes.c_float))
+            stage_t0 = time.perf_counter()
+            code = lib.opx_loudnorm_channel_stats_48k_f32_to_192k_process(
+                buf_ptr,
+                ctypes.c_uint32(window_in_frames),
+                ctypes.c_uint64(window_start_in_frame),
+                ctypes.c_uint64(received_in_frames),
+                ctypes.c_uint64(emitted_out_frames),
+                ctypes.c_uint64(final_end),
+                ctypes.c_uint32(args.channels),
+                ctypes.c_uint32(fpw),
+                filt_ptr,
+                channel_sums_ptr,
+                peaks_ptr,
+                states_ptr,
+                b_ptr,
+                a_ptr,
+            )
+            native_dt = time.perf_counter() - stage_t0
+            if code != 0:
+                raise RuntimeError(f'native 48k channel stats final flush failed with code {code}')
+            result.stats_sums_kernel_time += native_dt
+            result.stats_sums_wall_time += native_dt
+            emitted_out_frames = final_end
+
+        if audit_tail is not None and audit_tail_out_frames > 0 and emitted_out_frames > 0:
+            tail_frames = min(audit_tail_out_frames, emitted_out_frames)
+            tail_start = emitted_out_frames - tail_frames
+            tail_buf = bytearray(tail_frames * out_frame_bytes)
+            buf_ptr = ctypes.cast(ctypes.addressof(ctypes.c_char.from_buffer(window_buf)), ctypes.POINTER(ctypes.c_float))
+            out_ptr = ctypes.cast(ctypes.addressof(ctypes.c_char.from_buffer(tail_buf)), ctypes.POINTER(ctypes.c_double))
+            code = lib.opx_loudnorm_swr_48k_f32_to_192k_f64_slice(
+                buf_ptr,
+                ctypes.c_uint32(window_in_frames),
+                ctypes.c_uint64(window_start_in_frame),
+                ctypes.c_uint64(received_in_frames),
+                ctypes.c_uint64(tail_start),
+                ctypes.c_uint64(emitted_out_frames),
+                ctypes.c_uint32(args.channels),
+                filt_ptr,
+                out_ptr,
+            )
+            if code != 0:
+                raise RuntimeError(f'native 48k audit tail upsample failed with code {code}')
+            audit_tail.clear()
+            audit_tail.extend(tail_buf)
+    finally:
+        close_decode_pass(proc, handle, label)
+
+    _apply_streaming_size_update(ctx, result, emitted_out_frames * out_frame_bytes)
+
+
 def run_native_channel_stats_pass(ctx, result, source_stage_config):
     args = ctx.args
     cfg = ctx.cfg
@@ -225,110 +413,123 @@ def run_native_channel_stats_pass(ctx, result, source_stage_config):
     source_overlap_frames = source_stage_config.source_overlap_frames
     use_source_fixed_buffer = source_stage_config.use_source_fixed_buffer
 
-    with FrameChunkReader(
-        args,
-        cfg.root.streaming_io,
-        cfg.input_shape.decode_command,
-        'streaming decode native channel stats',
-        host_in,
-        nbytes=cfg.input_shape.nbytes,
-        chunk_bytes=cfg.sizing.stats_chunk_bytes,
-        frame_bytes=cfg.sizing.frame_bytes,
-        partial_frame_error='streaming native channel stats ended with a partial frame',
-        staging_label='streaming native channel stats staging',
-        short_read_error='short input read during native channel stats',
-    ) as chunks:
-        for chunk in chunks:
-            chunk_ptr = chunk.payload_ptr if getattr(chunk, 'payload_ptr', 0) else host_in_ptr
-            chunk_view = memoryview(chunk.payload) if getattr(chunk, 'payload_ptr', 0) else memoryview(host_in)[:chunk.this_bytes]
-            stage_t0 = time.perf_counter()
-            code = lib.opx_loudnorm_channel_stats_f64_process(
-                ctypes.cast(ctypes.c_void_p(chunk_ptr), ctypes.POINTER(ctypes.c_double)),
-                ctypes.c_uint32(chunk.this_frames),
-                ctypes.c_uint32(args.channels),
-                ctypes.c_uint32(cfg.input_shape.frames_per_window),
-                ctypes.c_uint32(chunk.frame_offset),
-                channel_sums_ptr,
-                peaks_ptr,
-                states_ptr,
-                source_states_ptr,
-                b_ptr,
-                a_ptr,
-            )
-            native_dt = time.perf_counter() - stage_t0
-            if code != 0:
-                raise RuntimeError(f'native channel stats failed with code {code}')
-            result.stats_sums_kernel_time += native_dt
-            result.stats_sums_wall_time += native_dt
+    if getattr(args, 'swr_upsample_48k_f32', False) and source_stage is None and args.rate == 192000 and cfg.root.streaming_io:
+        _run_native_channel_stats_48k_f32_pass(
+            ctx,
+            result,
+            lib,
+            channel_sums,
+            peaks,
+            states,
+            channel_sums_ptr,
+            peaks_ptr,
+            states_ptr,
+            b_ptr,
+            a_ptr,
+            audit_tail,
+        )
+    else:
+        with frame_chunk_reader_for(
+            ctx,
+            cfg.input_shape.decode_command,
+            'streaming decode native channel stats',
+            host_in,
+            chunk_bytes=cfg.sizing.stats_chunk_bytes,
+            partial_frame_error='streaming native channel stats ended with a partial frame',
+            staging_label='streaming native channel stats staging',
+            short_read_error='short input read during native channel stats',
+        ) as chunks:
+            for chunk in chunks:
+                chunk_ptr = chunk.payload_ptr if getattr(chunk, 'payload_ptr', 0) else host_in_ptr
+                chunk_view = memoryview(chunk.payload) if getattr(chunk, 'payload_ptr', 0) else memoryview(host_in)[:chunk.this_bytes]
+                stage_t0 = time.perf_counter()
+                code = lib.opx_loudnorm_channel_stats_f64_process(
+                    ctypes.cast(ctypes.c_void_p(chunk_ptr), ctypes.POINTER(ctypes.c_double)),
+                    ctypes.c_uint32(chunk.this_frames),
+                    ctypes.c_uint32(args.channels),
+                    ctypes.c_uint32(cfg.input_shape.frames_per_window),
+                    ctypes.c_uint32(chunk.frame_offset),
+                    channel_sums_ptr,
+                    peaks_ptr,
+                    states_ptr,
+                    source_states_ptr,
+                    b_ptr,
+                    a_ptr,
+                )
+                native_dt = time.perf_counter() - stage_t0
+                if code != 0:
+                    raise RuntimeError(f'native channel stats failed with code {code}')
+                result.stats_sums_kernel_time += native_dt
+                result.stats_sums_wall_time += native_dt
 
-            if audit_tail is not None:
-                audit_tail.extend(chunk_view)
-                excess = len(audit_tail) - cfg.sizing.audit_input_tail_bytes
-                if excess > 0:
-                    del audit_tail[:excess]
+                if audit_tail is not None:
+                    audit_tail.extend(chunk_view)
+                    excess = len(audit_tail) - cfg.sizing.audit_input_tail_bytes
+                    if excess > 0:
+                        del audit_tail[:excess]
+                if source_stage is not None:
+                    if use_source_fixed_buffer:
+                        next_stage_bytes = source_stage_active_bytes + chunk.this_bytes
+                        if next_stage_bytes > len(source_stage):
+                            raise RuntimeError(f'source fixed staging exceeded: need={next_stage_bytes} capacity={len(source_stage)}')
+                        memoryview(source_stage)[source_stage_active_bytes:next_stage_bytes] = chunk_view
+                        source_stage_active_bytes = next_stage_bytes
+                        stage_frames = source_stage_active_bytes // cfg.sizing.frame_bytes
+                    else:
+                        source_stage.extend(chunk_view)
+                        stage_frames = len(source_stage) // cfg.sizing.frame_bytes
+                    stage_end_frame = source_stage_start_frame + stage_frames
+                    full_ready_windows = min(result.windows, stage_end_frame // cfg.input_shape.frames_per_window)
+                    while full_ready_windows - next_source_window >= cfg.sizing.source_precompute_windows:
+                        ready_windows = next_source_window + cfg.sizing.source_precompute_windows
+                        copy_source_start_states(ready_windows)
+                        next_source_window = _run_source_exact_precompute_stage(
+                            ctx,
+                            result,
+                            source_stage,
+                            source_stage_start_frame,
+                            next_source_window,
+                            ready_windows,
+                            stage_active_bytes=source_stage_active_bytes if use_source_fixed_buffer else None,
+                        )
+                        ctx.emit_progress('stats_sums', 0.70 * (chunks.done_bytes / float(cfg.input_shape.nbytes)))
+                        if use_source_fixed_buffer:
+                            source_stage_start_frame, source_stage_active_bytes = _trim_source_exact_stage_fixed(
+                                source_stage,
+                                source_stage_active_bytes,
+                                source_stage_start_frame,
+                                next_source_window,
+                                source_overlap_frames,
+                                cfg.sizing.frame_bytes,
+                                cfg.input_shape.frames_per_window,
+                            )
+                        else:
+                            source_stage_start_frame = _trim_source_exact_stage(
+                                source_stage,
+                                source_stage_start_frame,
+                                next_source_window,
+                                source_overlap_frames,
+                                cfg.sizing.frame_bytes,
+                                cfg.input_shape.frames_per_window,
+                            )
+                ctx.emit_progress('stats_sums', 0.70 * (chunks.done_bytes / float(cfg.input_shape.nbytes)))
+            if cfg.root.streaming_io:
+                _apply_streaming_size_update(ctx, result, chunks.done_bytes)
             if source_stage is not None:
-                if use_source_fixed_buffer:
-                    next_stage_bytes = source_stage_active_bytes + chunk.this_bytes
-                    if next_stage_bytes > len(source_stage):
-                        raise RuntimeError(f'source fixed staging exceeded: need={next_stage_bytes} capacity={len(source_stage)}')
-                    memoryview(source_stage)[source_stage_active_bytes:next_stage_bytes] = chunk_view
-                    source_stage_active_bytes = next_stage_bytes
-                    stage_frames = source_stage_active_bytes // cfg.sizing.frame_bytes
-                else:
-                    source_stage.extend(chunk_view)
-                    stage_frames = len(source_stage) // cfg.sizing.frame_bytes
-                stage_end_frame = source_stage_start_frame + stage_frames
-                full_ready_windows = min(result.windows, stage_end_frame // cfg.input_shape.frames_per_window)
-                while full_ready_windows - next_source_window >= cfg.sizing.source_precompute_windows:
-                    ready_windows = next_source_window + cfg.sizing.source_precompute_windows
-                    copy_source_start_states(ready_windows)
+                if result.windows > next_source_window:
+                    copy_source_start_states(result.windows)
                     next_source_window = _run_source_exact_precompute_stage(
                         ctx,
                         result,
                         source_stage,
                         source_stage_start_frame,
                         next_source_window,
-                        ready_windows,
+                        result.windows,
                         stage_active_bytes=source_stage_active_bytes if use_source_fixed_buffer else None,
                     )
-                    ctx.emit_progress('stats_sums', 0.70 * (chunks.done_bytes / float(cfg.input_shape.nbytes)))
-                    if use_source_fixed_buffer:
-                        source_stage_start_frame, source_stage_active_bytes = _trim_source_exact_stage_fixed(
-                            source_stage,
-                            source_stage_active_bytes,
-                            source_stage_start_frame,
-                            next_source_window,
-                            source_overlap_frames,
-                            cfg.sizing.frame_bytes,
-                            cfg.input_shape.frames_per_window,
-                        )
-                    else:
-                        source_stage_start_frame = _trim_source_exact_stage(
-                            source_stage,
-                            source_stage_start_frame,
-                            next_source_window,
-                            source_overlap_frames,
-                            cfg.sizing.frame_bytes,
-                            cfg.input_shape.frames_per_window,
-                        )
-            ctx.emit_progress('stats_sums', 0.70 * (chunks.done_bytes / float(cfg.input_shape.nbytes)))
-        if cfg.root.streaming_io:
-            _apply_streaming_size_update(ctx, result, chunks.done_bytes)
-        if source_stage is not None:
-            if result.windows > next_source_window:
-                copy_source_start_states(result.windows)
-                next_source_window = _run_source_exact_precompute_stage(
-                    ctx,
-                    result,
-                    source_stage,
-                    source_stage_start_frame,
-                    next_source_window,
-                    result.windows,
-                    stage_active_bytes=source_stage_active_bytes if use_source_fixed_buffer else None,
-                )
-            if next_source_window != result.windows:
-                raise RuntimeError(f'fused source exact precompute incomplete: windows={next_source_window} expected={result.windows}')
-            _finish_source_sum_audit(ctx)
+                if next_source_window != result.windows:
+                    raise RuntimeError(f'fused source exact precompute incomplete: windows={next_source_window} expected={result.windows}')
+                _finish_source_sum_audit(ctx)
 
     copy_t0 = time.perf_counter()
     chk(ctx.cuda.cuMemcpyHtoD_v2(ctx.buffers.d_start_states, ctypes.c_void_p(channel_sums.buffer_info()[0]), len(channel_sums) * 8), 'cuMemcpyHtoD(native channel_sums)')

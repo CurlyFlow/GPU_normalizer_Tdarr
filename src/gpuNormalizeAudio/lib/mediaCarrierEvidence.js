@@ -6,8 +6,12 @@ const path = require("node:path");
 const { fileDigest, sameFileGeneration } = require("./mediaEvidenceFiles");
 
 function requireCarrierEvidence(carrier, plan, producer, expectedPlan) {
-  const installed = path.resolve(path.dirname(producer.roots[0]), "../runtime/bin/audio_clock_mux");
-  assert.equal(carrier.installed.file, installed);
+  const ownerRoot = path.dirname(producer.roots[0]);
+  const installed = path.resolve(ownerRoot, "../runtime/bin/audio_clock_mux");
+  const shared = path.resolve(__dirname, "../runtime/bin/audio_clock_mux");
+  const expected = fs.existsSync(installed) ? installed
+    : ownerRoot !== __dirname && fs.existsSync(shared) ? shared : installed;
+  assert.equal(carrier.installed.file, expected);
   for (const artifact of [carrier.installed, carrier.snapshot, plan]) {
     assert.ok(sameFileGeneration(artifact.identity, fileDigest(artifact.file)), "Transport artifact changed before finish");
   }

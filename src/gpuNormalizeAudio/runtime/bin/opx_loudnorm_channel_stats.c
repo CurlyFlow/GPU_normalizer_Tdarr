@@ -34,6 +34,8 @@ static uint32_t float_abs_bits(double x) {
     return bits.u;
 }
 
+#include "opx_loudnorm_channel_stats_mt.h"
+
 static double native_db_to_amp(double db) {
     return pow(10.0, db / 20.0);
 }
@@ -147,6 +149,14 @@ static int process_channel_stats_strided(
     if (!input || !channel_sums || !peak_bits || !states || !b || !a) return 1;
     if (channels == 0U || channels > 16U || frames_per_window == 0U) return 2;
     if (input_channels == 0U || channel_offset + channels > input_channels) return 3;
+
+    if (channels >= 2U && frames >= 8192U && !compact_output && (global_frame_offset % frames_per_window) == 0U) {
+        return process_channel_stats_strided_mt(
+            input, frames, channels, input_channels, channel_offset,
+            frames_per_window, global_frame_offset, channel_sums,
+            peak_bits, states, source_start_states, b, a
+        );
+    }
 
     const double a1 = a[1];
     const double a2 = a[2];

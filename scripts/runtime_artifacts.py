@@ -15,6 +15,7 @@ import sys
 import tempfile
 from pathlib import Path
 from audio_clock_artifact import ARTIFACT as CLOCK_ARTIFACT, build_audio_clock, publish_build_manifest
+from aac_encode_artifact import ARTIFACT as AAC_MT_ARTIFACT, build_aac_encode_mt
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -103,7 +104,7 @@ def artifact_lock():
 
 def clean_stale(plugin_root: Path) -> None:
     removed = []
-    for relative in (PTX_ARTIFACT, NATIVE_ARTIFACT, CLOCK_ARTIFACT):
+    for relative in (PTX_ARTIFACT, NATIVE_ARTIFACT, CLOCK_ARTIFACT, AAC_MT_ARTIFACT):
         target = plugin_root / relative
         for path in sorted(target.parent.glob(f'.{target.name}.*')):
             if path.is_file():
@@ -147,6 +148,7 @@ def build_native(plugin_root: Path, output: Path) -> None:
             '-O3',
             '-fPIC',
             '-shared',
+            '-pthread',
             str(plugin_root / NATIVE_SOURCE),
             '-o',
             str(output),
@@ -232,7 +234,14 @@ def validate_artifact_abi(plugin_root: Path, ptx_artifact: Path, native_artifact
 
 
 def validate_inputs(plugin_root: Path) -> None:
-    for rel in (PTX_SOURCE, PTX_COMPILER, NATIVE_SOURCE, Path('runtime/bin/audio_clock_mux.c')):
+    for rel in (
+        PTX_SOURCE,
+        PTX_COMPILER,
+        NATIVE_SOURCE,
+        Path('runtime/bin/audio_clock_mux.c'),
+        Path('runtime/bin/aac_encode_mt.c'),
+        Path('runtime/bin/aacenc_mt.h'),
+    ):
         require_file(plugin_root / rel)
 
 
@@ -244,24 +253,30 @@ def build(plugin_root: Path) -> None:
     native_temp = temp_path_for(native_target)
     clock_target = plugin_root / CLOCK_ARTIFACT
     clock_temp = temp_path_for(clock_target)
+    aac_target = plugin_root / AAC_MT_ARTIFACT
+    aac_temp = temp_path_for(aac_target)
     try:
         build_ptx(plugin_root, ptx_temp)
         build_native(plugin_root, native_temp)
         clock_proof = build_audio_clock(plugin_root, clock_temp, native_compiler())
+        build_aac_encode_mt(plugin_root, aac_temp, native_compiler())
         ptx_temp.chmod(0o644)
         native_temp.chmod(0o755)
         validate_artifact_abi(plugin_root, ptx_temp, native_temp, 'rebuilt')
         os.replace(ptx_temp, ptx_target)
         os.replace(native_temp, native_target)
         os.replace(clock_temp, clock_target)
+        os.replace(aac_temp, aac_target)
         manifest = publish_build_manifest(clock_proof, clock_target)
     finally:
         ptx_temp.unlink(missing_ok=True)
         native_temp.unlink(missing_ok=True)
         clock_temp.unlink(missing_ok=True)
+        aac_temp.unlink(missing_ok=True)
     print(f'OK: built PTX sha256={sha256(ptx_target)}')
     print(f'OK: built native runtime sha256={sha256(native_target)}')
     print(f'OK: built audio clock carrier sha256={sha256(clock_target)}')
+    print(f'OK: built multi-channel AAC encoder sha256={sha256(aac_target)}')
     print(f'OK: audio clock build proof={manifest}')
 
 
@@ -282,27 +297,33 @@ def verify(plugin_root: Path) -> None:
     ptx_target = plugin_root / PTX_ARTIFACT
     native_target = plugin_root / NATIVE_ARTIFACT
     clock_target = plugin_root / CLOCK_ARTIFACT
+    aac_target = plugin_root / AAC_MT_ARTIFACT
     require_file(ptx_target)
     require_file(native_target)
     require_file(clock_target)
+    require_file(aac_target)
     ptx_temp = temp_path_for(ptx_target)
     native_temp = temp_path_for(native_target)
     clock_temp = temp_path_for(clock_target)
+    aac_temp = temp_path_for(aac_target)
     try:
         build_ptx(plugin_root, ptx_temp)
         build_native(plugin_root, native_temp)
         build_audio_clock(plugin_root, clock_temp, native_compiler())
+        build_aac_encode_mt(plugin_root, aac_temp, native_compiler())
         ptx_temp.chmod(0o644)
         native_temp.chmod(0o755)
         assert_matches(ptx_target, ptx_temp, 'PTX')
         assert_matches(native_target, native_temp, 'native runtime')
         assert_matches(clock_target, clock_temp, 'audio clock carrier')
+        assert_matches(aac_target, aac_temp, 'multi-channel AAC encoder')
         validate_artifact_abi(plugin_root, ptx_target, native_target, 'packaged')
         validate_artifact_abi(plugin_root, ptx_temp, native_temp, 'rebuilt')
     finally:
         ptx_temp.unlink(missing_ok=True)
         native_temp.unlink(missing_ok=True)
         clock_temp.unlink(missing_ok=True)
+        aac_temp.unlink(missing_ok=True)
 
 
 def main() -> None:

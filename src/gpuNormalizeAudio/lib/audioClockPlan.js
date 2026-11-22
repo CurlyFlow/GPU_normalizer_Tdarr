@@ -60,16 +60,67 @@ function planAacPreservation(source, offset) {
     ...clockSegments(source, source.rate, offset) };
 }
 
+function reduceRational(numerator, denominator) {
+  assert.ok(typeof numerator === "bigint" && typeof denominator === "bigint" && denominator > 0n);
+  let a = numerator < 0n ? -numerator : numerator, b = denominator;
+  while (b) { const remainder = a % b; a = b; b = remainder; }
+  return { numerator: numerator / a, denominator: denominator / a };
+}
+
 function encodedWindow(end) {
   assert.ok(end && typeof end.numerator === "string" && /^-?\d{1,80}$/.test(end.numerator)
     && typeof end.denominator === "string" && /^[1-9]\d{0,79}$/.test(end.denominator), "Missing admitted AAC edit endpoint");
-  let numerator = BigInt(end.numerator), denominator = BigInt(end.denominator);
-  let a = numerator < 0n ? -numerator : numerator, b = denominator;
-  while (b) { const remainder = a % b; a = b; b = remainder; }
-  numerator /= a; denominator /= a;
+  const { numerator, denominator } = reduceRational(BigInt(end.numerator), BigInt(end.denominator));
   assert.ok(numerator > -(1n << 63n) && numerator < (1n << 63n) && denominator <= 2147483647n,
     "AAC edit endpoint exceeds the exact carrier bounds");
   return `${numerator} ${denominator}`;
+}
+
+function rationalSubtractShift(originalEnd, offset, tailTicks, rate) {
+  const [origNum, origDen] = encodedWindow(originalEnd).split(" ").map(BigInt);
+  assert.ok(typeof offset?.numerator === "bigint" && typeof offset?.denominator === "bigint" && offset.denominator > 0n);
+  assert.ok(typeof tailTicks === "bigint" && Number.isSafeInteger(rate) && rate > 0);
+  const shiftedNum = origNum * offset.denominator + offset.numerator * origDen;
+  const shiftedDen = origDen * offset.denominator;
+  const { numerator, denominator } = reduceRational(
+    shiftedNum * BigInt(rate) - tailTicks * shiftedDen, shiftedDen * BigInt(rate));
+  const result = { numerator: String(numerator), denominator: String(denominator) };
+  encodedWindow(result);
+  return result;
+}
+
+function assertNormalizedAacWindowCounts(candidateWindow, counts, rate) {
+  assert.ok(candidateWindow, "Missing candidate AAC presentation window");
+  assert.equal(BigInt(candidateWindow.rate), BigInt(rate), "Normalized AAC window rate differs");
+  const priming = BigInt(candidateWindow.mediaTime);
+  assert.equal(priming, 1024n, "Normalized AAC requires standard 1024-sample priming");
+  assert.equal(BigInt(candidateWindow.samples) * 1024n - priming, counts.decodedSamples,
+    "Normalized AAC packet count differs from decoded count domain");
+  const codedTicks = candidateWindow.durationRuns.reduce(
+    (sum, run) => sum + BigInt(run.count) * BigInt(run.duration), 0n);
+  assert.equal(codedTicks - priming, counts.validSamples,
+    "Normalized AAC raw extent differs from valid count domain");
+}
+
+// Derive the carrier plan for an explicitly qualified normalized AAC stream.
+// Never weakens strict copied-clock rules; caller must supply verified count
+// domain and admitted original presentation endpoint.
+function planNormalizedAacClock(source, candidate, offset, { counts, originalEnd, candidateWindow }) {
+  assert.ok(candidate.samples > 0n && candidate.segments.length === 1,
+    "Clock transport requires complete source and continuous encoded-input timelines");
+  assert.equal(candidate.samples, counts.decodedSamples,
+    "Normalized AAC decoded sample count differs from exact count domain");
+  assert.equal(candidate.samples % 1024n, 0n, "AAC-LC decoded sample coverage is incomplete");
+  assert.equal(candidate.segments[0].samples, 0n);
+  assertNormalizedAacWindowCounts(candidateWindow, counts, candidate.rate);
+  const inputStart = exactTicks(candidate.segments[0].start, candidate.rate);
+  const timed = clockSegments(source, candidate.rate, offset);
+  const last = timed.segments.at(-1);
+  const tail = BigInt(last.pts) - BigInt(last.sample) - inputStart;
+  return {
+    plan: { rate: candidate.rate, samples: String(candidate.samples), inputStart: String(inputStart), ...timed },
+    declaredEnd: rationalSubtractShift(originalEnd, offset, tail, candidate.rate),
+  };
 }
 
 function clockPlanRequiresFragments({ plan, declaredEnd }) {
@@ -106,4 +157,5 @@ function encodeClockPlan(tracks) {
   return text;
 }
 
-module.exports = { planAacClock, planAacPreservation, encodeClockPlan, clockPlanRequiresFragments };
+module.exports = { planAacClock, planAacPreservation, planNormalizedAacClock,
+  assertNormalizedAacWindowCounts, rationalSubtractShift, encodeClockPlan, clockPlanRequiresFragments };

@@ -29,7 +29,7 @@ static int open_merge_input(MergeInput *input, const char *file)
         return AVERROR(EINVAL);
     input->format = avformat_alloc_context(); input->packet = av_packet_alloc();
     if (!input->format || !input->packet) return AVERROR(ENOMEM);
-    input->reader = avio_alloc_context(av_malloc(32768), 32768, 0, &input->io, clock_read, NULL, clock_seek);
+    input->reader = avio_alloc_context(av_malloc(CLOCK_IO_BUF_SIZE), CLOCK_IO_BUF_SIZE, 0, &input->io, clock_read, NULL, clock_seek);
     if (!input->reader || !input->reader->buffer) return AVERROR(ENOMEM);
     input->format->pb = input->reader; input->format->flags |= AVFMT_FLAG_CUSTOM_IO;
     int result = avformat_open_input(&input->format, NULL, NULL, NULL);
@@ -79,6 +79,43 @@ static int merge_structure(MergeInput *audio, MergeInput *video, AVFormatContext
     return ordinal == plan->count ? 0 : AVERROR(EINVAL);
 }
 
+static int mux_structure(MergeInput *audio, MergeInput *video, AVFormatContext *output,
+                         ClockPlan *plan, ClockTrack **tracks)
+{
+    int result;
+    for (unsigned i = 0; i < video->format->nb_streams; i++) {
+        if (clock_output_stream(video->format, i) < 0) continue;
+        const AVStream *before = video->format->streams[i];
+        if (before->codecpar->codec_type != AVMEDIA_TYPE_VIDEO) continue;
+        if ((result = copy_clock_stream(output, before)) < 0) return result;
+        video->map[i] = (int)output->nb_streams - 1;
+    }
+    unsigned ordinal = 0;
+    for (unsigned i = 0; i < audio->format->nb_streams; i++) {
+        const AVStream *before = audio->format->streams[i];
+        if (before->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) return AVERROR(EINVAL);
+        if (ordinal >= plan->count) return AVERROR(EINVAL);
+        ClockTrack *track = &plan->tracks[ordinal++];
+        if (track->stream != (int)i || !clock_aac_lc(before->codecpar)
+            || before->codecpar->sample_rate != track->rate) return AVERROR(ENOTSUP);
+        if ((result = copy_clock_stream(output, before)) < 0) return result;
+        int mapped = (int)output->nb_streams - 1;
+        track->stream = mapped;
+        tracks[mapped] = track;
+        audio->map[i] = mapped;
+    }
+    if (ordinal != plan->count) return AVERROR(EINVAL);
+    for (unsigned i = 0; i < video->format->nb_streams; i++) {
+        if (clock_output_stream(video->format, i) < 0) continue;
+        const AVStream *before = video->format->streams[i];
+        if (before->codecpar->codec_type == AVMEDIA_TYPE_VIDEO
+            || before->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) continue;
+        if ((result = copy_clock_stream(output, before)) < 0) return result;
+        video->map[i] = (int)output->nb_streams - 1;
+    }
+    return copy_clock_chapters_and_metadata(output, video->format);
+}
+
 static int preserve_packet(AVPacket *packet, AVStream *stream, ClockTrack *track)
 {
     if (stream->time_base.num != 1 || stream->time_base.den != track->rate) {
@@ -108,7 +145,7 @@ static int preserve_packet(AVPacket *packet, AVStream *stream, ClockTrack *track
     return 0;
 }
 
-static int next_merge_packet(MergeInput *input, ClockTrack **tracks)
+static int next_merge_packet(MergeInput *input, AVFormatContext *output, ClockTrack **tracks, int retime_audio)
 {
     av_packet_unref(input->packet);
     int result;
@@ -119,18 +156,24 @@ static int next_merge_packet(MergeInput *input, ClockTrack **tracks)
         int mapped = input->map[packet->stream_index];
         if (mapped < 0) { av_packet_unref(packet); continue; }
         if (packet->pts == AV_NOPTS_VALUE || packet->dts == AV_NOPTS_VALUE) return AVERROR(EINVAL);
-        if (tracks && (result = preserve_packet(packet, input->format->streams[packet->stream_index], tracks[mapped])) < 0)
-            return result;
+        if (tracks) {
+            AVStream *before = input->format->streams[packet->stream_index];
+            result = retime_audio
+                ? clock_retime_packet(packet, before, output->streams[mapped], tracks[mapped])
+                : preserve_packet(packet, before, tracks[mapped]);
+            if (result < 0) return result;
+        }
         return 0;
     }
     if (result != AVERROR_EOF) return result;
     input->ended = 1; return 0;
 }
 
-static int write_merge_packets(MergeInput *audio, MergeInput *video, AVFormatContext *output, ClockTrack **tracks)
+static int write_merge_packets(MergeInput *audio, MergeInput *video, AVFormatContext *output,
+                               ClockTrack **tracks, int retime_audio)
 {
-    int result = next_merge_packet(audio, tracks);
-    if (result < 0 || (result = next_merge_packet(video, NULL)) < 0) return result;
+    int result = next_merge_packet(audio, output, tracks, retime_audio);
+    if (result < 0 || (result = next_merge_packet(video, output, NULL, 0)) < 0) return result;
     while (!audio->ended || !video->ended) {
         MergeInput *input = audio->ended ? video : audio;
         if (!audio->ended && !video->ended
@@ -143,12 +186,12 @@ static int write_merge_packets(MergeInput *audio, MergeInput *video, AVFormatCon
         av_packet_rescale_ts(packet, input->format->streams[index]->time_base, target->time_base);
         packet->stream_index = target->index; packet->pos = -1;
         if ((result = av_interleaved_write_frame(output, packet)) < 0
-            || (result = next_merge_packet(input, input == audio ? tracks : NULL)) < 0) return result;
+            || (result = next_merge_packet(input, output, input == audio ? tracks : NULL, input == audio ? retime_audio : 0)) < 0) return result;
     }
     return 0;
 }
 
-int merge_clock_audio(char **arguments)
+static int run_merge_or_mux(char **arguments, int retime_audio)
 {
     MergeInput audio = { .io.fd = -1 }, video = { .io.fd = -1 };
     AVFormatContext *output = NULL; AVIOContext *writer = NULL; AVDictionary *options = NULL;
@@ -162,16 +205,22 @@ int merge_clock_audio(char **arguments)
     if ((result = open_merge_input(&audio, arguments[0])) < 0 || (result = open_merge_input(&video, arguments[1])) < 0) goto done;
     if ((result = avformat_alloc_output_context2(&output, NULL, clock_mux_format(video.format), NULL)) < 0) goto done;
     if (!output) { result = AVERROR(ENOMEM); goto done; }
-    if ((result = merge_structure(&audio, &video, output, &plan, tracks)) < 0) goto done;
+    result = retime_audio
+        ? mux_structure(&audio, &video, output, &plan, tracks)
+        : merge_structure(&audio, &video, output, &plan, tracks);
+    if (result < 0) goto done;
     timescale = clock_movie_timescale(output, &plan);
     if (timescale < 1) { result = AVERROR(ENOTSUP); goto done; }
     target.bound = (audio.identity.st_size + video.identity.st_size) * 2 + 67108864;
     target.fd = open(arguments[2], O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
     if (target.fd < 0) { result = AVERROR(errno); goto done; }
-    writer = avio_alloc_context(av_malloc(32768), 32768, 1, &target, NULL, clock_write, clock_seek);
+    writer = avio_alloc_context(av_malloc(CLOCK_IO_BUF_SIZE), CLOCK_IO_BUF_SIZE, 1, &target, NULL, clock_write, clock_seek);
     if (!writer || !writer->buffer) { result = AVERROR(ENOMEM); goto done; }
     output->pb = writer; output->flags |= AVFMT_FLAG_CUSTOM_IO; output->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
     av_dict_set(&options, "use_editlist", "1", 0); av_dict_set_int(&options, "movie_timescale", timescale, 0);
+    if (clock_has_mov_text_btrt(output)) av_dict_set(&options, "write_btrt", "0", 0);
+    int video_scale = clock_video_timescale(output);
+    if (video_scale > 0) av_dict_set_int(&options, "video_track_timescale", video_scale, 0);
     for (unsigned i = 0; i < plan.count; i++) if (clock_requires_fragments(&plan.tracks[i])) fragmented = 1;
     if (fragmented) {
         av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof", 0);
@@ -179,21 +228,28 @@ int merge_clock_audio(char **arguments)
     }
     if ((result = avformat_write_header(output, &options)) < 0) goto done;
     if (av_dict_count(options)) { result = AVERROR(EINVAL); goto done; }
-    if ((result = write_merge_packets(&audio, &video, output, tracks)) < 0) goto done;
+    if ((result = write_merge_packets(&audio, &video, output, tracks, retime_audio)) < 0) goto done;
     for (unsigned i = 0; i < plan.count; i++) {
         ClockTrack *track = &plan.tracks[i];
         if (!clock_packets_complete(track)) { result = AVERROR(EINVAL); goto done; }
     }
     if ((result = av_write_trailer(output)) < 0) goto done;
     avio_flush(writer);
-    if (writer->error < 0 || preserve_clock_windows(target.fd, &plan, timescale, 1) || fsync(target.fd)
-        || !clock_unchanged(audio.io.fd, &audio.identity) || !clock_unchanged(video.io.fd, &video.identity)
+    if (writer->error < 0) { result = writer->error; goto done; }
+    if (preserve_clock_windows(target.fd, &plan, timescale, !retime_audio)) { result = AVERROR(ENOTSUP); goto done; }
+    if (fsync(target.fd) || !clock_unchanged(audio.io.fd, &audio.identity) || !clock_unchanged(video.io.fd, &video.identity)
         || !clock_unchanged(plan_fd, &plan_before)) result = AVERROR(EIO);
 done:
-    if (result < 0) { char text[AV_ERROR_MAX_STRING_SIZE]; av_strerror(result, text, sizeof(text)); fprintf(stderr, "audio-clock-merge: %s\n", text); }
+    if (result < 0) {
+        char text[AV_ERROR_MAX_STRING_SIZE]; av_strerror(result, text, sizeof(text));
+        fprintf(stderr, "%s: %s\n", retime_audio ? "audio-clock-mux-audio" : "audio-clock-merge", text);
+    }
     av_dict_free(&options); avformat_free_context(output); clock_free_io(&writer); free_clock_plan(&plan);
     close_merge_input(&audio); close_merge_input(&video);
     if (target.fd >= 0) close(target.fd);
     if (plan_fd >= 0) close(plan_fd);
     return result < 0;
 }
+
+int merge_clock_audio(char **arguments) { return run_merge_or_mux(arguments, 0); }
+int mux_clock_audio(char **arguments) { return run_merge_or_mux(arguments, 1); }

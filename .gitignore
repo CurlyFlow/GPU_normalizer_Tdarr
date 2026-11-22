@@ -24,6 +24,7 @@ tools/
 src/**/*.so
 src/**/*.ptx
 src/**/audio_clock_mux
+src/**/aac_encode_mt
 
 # Generated logs and scratch output
 *.log

@@ -105,7 +105,14 @@ function compareTransportWindows(input, fragments, plans) {
       return end === null || actual > end ? actual : end;
     }, null);
     assert.equal(BigInt(after.maxPresentationEnd), maximum, 'Maximum presentation window changed');
-    const declared = compareDeclaredWindows(before, after, tail);
+    const normalizedEof = plans[index].normalizedEof;
+    if (normalizedEof) {
+      const codedTicks = before.durationRuns.reduce((sum, run) => sum + BigInt(run.count) * BigInt(run.duration), 0n);
+      assert.equal(codedTicks - BigInt(before.mediaTime), BigInt(normalizedEof.validSamples),
+        'Normalized transport input extent differs from valid count domain');
+    }
+    const declared = compareDeclaredWindows(
+      normalizedEof ? { ...before, declaredEnd: plans[index].declaredEnd } : before, after, tail);
     return { id: after.id, status: 'pass', declared, inputEnd: before.presentationEnd, outputEnd: after.presentationEnd,
       lastDuration: after.last.duration, priming: after.mediaTime };
   });

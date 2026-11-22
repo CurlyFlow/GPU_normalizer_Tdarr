@@ -37,7 +37,7 @@ const details = () => ({
   ],
   outputs: [
     { number: 1, tooltip: "Output package with normalized or copied selected audio, generated stereo when enabled, and optional removal of other audio languages." },
-    { number: 2, tooltip: "No audio or no selected audio remains. No media or Tdarr entry is deleted by this audio plugin. Connect Media Pipeline Helper finish for acknowledged rejection and cleanup." },
+    { number: 2, tooltip: "No audio or no selected audio remains. No media or Tdarr entry is deleted by this audio plugin. Connect a downstream rejection or cleanup step if desired." },
   ],
 });
 

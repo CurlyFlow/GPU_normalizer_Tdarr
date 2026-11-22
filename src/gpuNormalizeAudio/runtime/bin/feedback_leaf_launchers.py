@@ -1,7 +1,7 @@
 from feedback_apply_args import safe_feedback_apply6_args, safe_skip_output_sums_active
 from feedback_apply import feedback_state_i_view
 from feedback_apply_kernel import launch_apply_kernel, record_safe_apply_kernel, record_unsafe_apply_kernel
-from feedback_modes import can_parallel_skip_safe_feedback
+from feedback_modes import can_parallel_skip_safe_feedback, parallel_skip_before_threshold_6ch_enabled
 
 
 def launch_parallel_skip_safe_feedback(ctx, result, apply_chunk, feedback_state_i_host, *, local_windows):
@@ -47,7 +47,10 @@ def launch_parallel_unsafe_feedback(ctx, result, apply_chunk, feedback_state_i_h
         unsafe_kernel = ctx.kernels.safe_feedback_skip_apply_fn
         unsafe_label = 'unsafe-feedback-skip-parallel6'
         unsafe_block_x = 256
-    elif cfg.exact.exact_unsafe_skip_kernel_6ch and not output_sums_active and ctx.args.channels == 6 and feedback_state_i_view(feedback_state_i_host).enabled('above_threshold'):
+    elif cfg.exact.exact_unsafe_skip_kernel_6ch and not output_sums_active and ctx.args.channels == 6 and (
+        feedback_state_i_view(feedback_state_i_host).enabled('above_threshold')
+        or parallel_skip_before_threshold_6ch_enabled(cfg, ctx.args)
+    ):
         unsafe_kernel = ctx.kernels.safe_feedback_skip_apply_fn
         unsafe_label = 'unsafe-feedback-skip-parallel6ch'
         unsafe_block_x = 256

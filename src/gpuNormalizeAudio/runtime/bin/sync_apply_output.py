@@ -321,7 +321,20 @@ class SyncPinnedBorrowedOutput:
         self.pinned_views = []
 
 
-def copy_sync_output(ctx, result, fo, *, this_output_bytes, stage_t0, async_output=None, borrowed_output=None, this_frames=0, frame_offset=0):
+def copy_sync_output(
+    ctx,
+    result,
+    fo,
+    *,
+    this_output_bytes,
+    stage_t0,
+    async_output=None,
+    borrowed_output=None,
+    this_frames=0,
+    frame_offset=0,
+    swr_downsampler=None,
+    is_final=False,
+):
     maybe_export_device_slot(
         ctx,
         this_output_bytes=this_output_bytes,
@@ -342,33 +355,49 @@ def copy_sync_output(ctx, result, fo, *, this_output_bytes, stage_t0, async_outp
         result.apply_wall_time += time.perf_counter() - stage_t0
         return
 
+    src_dev_ptr = ctx.bindings.out_arg.value
+    write_bytes = this_output_bytes
+    if swr_downsampler is not None:
+        if native_first_pass_output_sums(ctx):
+            raise RuntimeError('native first-pass output metrics are not supported with GPU SWR downsampling')
+        src_dev_ptr, write_bytes = swr_downsampler.process_chunk(
+            ctx,
+            result,
+            src_dev_ptr=src_dev_ptr,
+            chunk_frames=this_frames,
+            is_final=is_final,
+        )
+        if write_bytes <= 0:
+            result.apply_wall_time += time.perf_counter() - stage_t0
+            return
+
     if async_output is not None:
         if native_first_pass_output_sums(ctx):
             raise RuntimeError('native first-pass output metrics are not supported with async output')
         if async_output.double_buffer:
-            async_output.queue_output(ctx.cuda, result, ctx.buffers, fo, this_output_bytes=this_output_bytes)
+            async_output.queue_output(ctx.cuda, result, ctx.buffers, fo, this_output_bytes=write_bytes)
             while len(async_output.pending) > 1:
                 async_output.finish_pending(ctx.cuda, result, fo)
         else:
             async_output.finish_pending(ctx.cuda, result, fo)
-            async_output.queue_output(ctx.cuda, result, ctx.buffers, fo, this_output_bytes=this_output_bytes)
+            async_output.queue_output(ctx.cuda, result, ctx.buffers, fo, this_output_bytes=write_bytes)
         result.apply_wall_time += time.perf_counter() - stage_t0
         return
 
     if getattr(fo, 'zero_copy', False):
         acquire_t0 = time.perf_counter()
-        out_buf = fo.acquire_buffer(this_output_bytes)
+        out_buf = fo.acquire_buffer(write_bytes)
         result.apply_write_time += time.perf_counter() - acquire_t0
         try:
             t0 = time.perf_counter()
-            chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(out_buf[1]), ctypes.c_void_p(ctx.bindings.out_arg.value), this_output_bytes), 'cuMemcpyDtoH(output)')
+            chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(out_buf[1]), ctypes.c_void_p(src_dev_ptr), write_bytes), 'cuMemcpyDtoH(output)')
             copy_dt = time.perf_counter() - t0
             result.apply_d2h_time += copy_dt
             result.total_d2h_time += copy_dt
             capture_first_pass_output_metrics_native(ctx, result, out_buf[1], this_frames, frame_offset)
             result.apply_wall_time += time.perf_counter() - stage_t0
             write_t0 = time.perf_counter()
-            fo.write_acquired(out_buf, this_output_bytes)
+            fo.write_acquired(out_buf, write_bytes)
             result.apply_write_time += time.perf_counter() - write_t0
             out_buf = None
         finally:
@@ -380,25 +409,29 @@ def copy_sync_output(ctx, result, fo, *, this_output_bytes, stage_t0, async_outp
         slot, out_ptr, out_view, release = borrowed_output.acquire()
         try:
             t0 = time.perf_counter()
-            chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(out_ptr.value), ctypes.c_void_p(ctx.bindings.out_arg.value), this_output_bytes), 'cuMemcpyDtoH(output borrowed)')
+            chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(out_ptr.value), ctypes.c_void_p(src_dev_ptr), write_bytes), 'cuMemcpyDtoH(output borrowed)')
             copy_dt = time.perf_counter() - t0
             result.apply_d2h_time += copy_dt
             result.total_d2h_time += copy_dt
             capture_first_pass_output_metrics_native(ctx, result, out_ptr.value, this_frames, frame_offset)
             result.apply_wall_time += time.perf_counter() - stage_t0
             write_t0 = time.perf_counter()
-            fo.write_borrowed(out_view[:this_output_bytes], release)
+            fo.write_borrowed(out_view[:write_bytes], release)
             release = None
             borrowed_output.borrowed_writes += 1
-            borrowed_output.borrowed_bytes += this_output_bytes
+            borrowed_output.borrowed_bytes += write_bytes
             result.apply_write_time += time.perf_counter() - write_t0
         finally:
             if release is not None:
                 release()
         return
 
+    if getattr(fo, 'loudnorm_null_write', False) and not native_first_pass_output_sums(ctx):
+        result.apply_wall_time += time.perf_counter() - stage_t0
+        return
+
     t0 = time.perf_counter()
-    chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(ctx.host_io.host_out_ptr), ctypes.c_void_p(ctx.bindings.out_arg.value), this_output_bytes), 'cuMemcpyDtoH(output)')
+    chk(ctx.cuda.cuMemcpyDtoH_v2(ctypes.c_void_p(ctx.host_io.host_out_ptr), ctypes.c_void_p(src_dev_ptr), write_bytes), 'cuMemcpyDtoH(output)')
     copy_dt = time.perf_counter() - t0
     result.apply_d2h_time += copy_dt
     result.total_d2h_time += copy_dt
@@ -406,7 +439,7 @@ def copy_sync_output(ctx, result, fo, *, this_output_bytes, stage_t0, async_outp
     result.apply_wall_time += time.perf_counter() - stage_t0
     if getattr(fo, 'loudnorm_null_write', False):
         return
-    out_view = memoryview(ctx.host_io.host_out)[:this_output_bytes]
+    out_view = memoryview(ctx.host_io.host_out)[:write_bytes]
     write_t0 = time.perf_counter()
     fo.write(out_view)
     result.apply_write_time += time.perf_counter() - write_t0

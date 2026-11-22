@@ -143,6 +143,68 @@ extern "C" __device__ double relative_threshold_lut_dev(unsigned int *hist, cons
     return energy_to_loudness_dev((total / (double)count) * 0.1);
 }
 
+extern "C" __device__ int opx_ctz_u32_dev(unsigned int m) {
+#ifdef __CUDA_ARCH__
+    return __ffs((int)m) - 1;
+#else
+    return __builtin_ctz(m);
+#endif
+}
+
+extern "C" __device__ void gated_and_relative_loudness_nz_dev(
+    const unsigned int *hist,
+    const double *energies,
+    const double *boundaries,
+    const unsigned int *nz_mask,
+    double *global_out,
+    double *rel_thresh_out
+) {
+    double total = 0.0;
+    unsigned int count = 0;
+    for (int w = 0; w < 32; w++) {
+        unsigned int m = nz_mask[w];
+        while (m) {
+            int bit = opx_ctz_u32_dev(m);
+            m &= m - 1U;
+            int i = (w << 5) | bit;
+            unsigned int h = hist[i];
+            total += (double)h * energies[i];
+            count += h;
+        }
+    }
+    if (count == 0U) {
+        *global_out = -1.0 / 0.0;
+        *rel_thresh_out = -70.0;
+        return;
+    }
+    double rel = (total / (double)count) * 0.1;
+    *rel_thresh_out = energy_to_loudness_dev(rel);
+    int start;
+    if (rel < boundaries[0]) {
+        start = 0;
+    } else {
+        start = hist_index_from_boundaries_dev(rel, boundaries);
+        if (rel > energies[start] && start < 999) start++;
+    }
+    double gated = 0.0;
+    unsigned int gated_count = 0;
+    int w_start = start >> 5;
+    unsigned int first_mask = ~0U << (start & 31);
+    for (int w = w_start; w < 32; w++) {
+        unsigned int m = nz_mask[w];
+        if (w == w_start) m &= first_mask;
+        while (m) {
+            int bit = opx_ctz_u32_dev(m);
+            m &= m - 1U;
+            int i = (w << 5) | bit;
+            unsigned int h = hist[i];
+            gated += (double)h * energies[i];
+            gated_count += h;
+        }
+    }
+    *global_out = gated_count == 0U ? (-1.0 / 0.0) : energy_to_loudness_dev(gated / (double)gated_count);
+}
+
 extern "C" __device__ double gaussian_filter_dev(double *delta, const double *weights, int index) {
     double result = 0.0;
     index = index - 10 > 0 ? index - 10 : index + 20;

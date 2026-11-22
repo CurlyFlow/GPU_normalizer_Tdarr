@@ -1,5 +1,6 @@
 "use strict";
 
+const fs = require("node:fs");
 const path = require("node:path");
 const { mediaTools } = require("./mediaTools");
 const { verifyAudioValuesInWorker } = require("./mediaAudioValueWorker");
@@ -8,6 +9,14 @@ const { audioValueMaps, createAudioSelectionIntent } = require("./audioValueSele
 const { inspectStreams } = require("./mediaSourceProbe");
 const { decoderIdentity } = require("./mediaEvidenceTools");
 const { retainedReceipt } = require("./mediaEvidenceFiles");
+
+function resolveCpuNormalizePluginPath() {
+  const candidates = [
+    path.resolve(__dirname, "../../../normalizeAudio/1.0.0/index.js"),
+    path.resolve(__dirname, "../../../../../CommunityFlowPlugins/audio/normalizeAudio/1.0.0/index.js"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
 
 async function compareAudioOutputValues(args, candidateFile, audioSpecs, outputContract, basis, verify) {
   const tools = mediaTools(args), prober = decoderIdentity(tools.ffprobe);
@@ -19,7 +28,7 @@ async function compareAudioOutputValues(args, candidateFile, audioSpecs, outputC
   const receipt = await verify({ sourceFile: args.inputFileObj._id, candidateFile,
     directory: path.dirname(candidateFile), ffmpegPath: tools.ffmpeg, ffprobePath: tools.ffprobe, maps,
     plugin: maps.some(normalizesAudio)
-      ? { file: path.resolve(__dirname, "../../../normalizeAudio/1.0.0/index.js"), sha256: CPU_PLUGIN_SHA256 } : null,
+      ? { file: resolveCpuNormalizePluginPath(), sha256: CPU_PLUGIN_SHA256 } : null,
     ...(basis === null ? {} : { basis }) },
   { onProgress: () => args.jobLog("Independent audio value comparison is still running; output remains unpublished.") });
   args.variables = { ...args.variables, gpuNormalizeAudioValues: receipt };

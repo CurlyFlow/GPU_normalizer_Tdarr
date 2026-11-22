@@ -207,6 +207,14 @@ function pushMp4TrueHdOutputArgs(args, container, copiedTrueHdStreams) {
   args.push(...mp4TrueHdOutputArgs(container, copiedTrueHdStreams));
 }
 
+function pushPreservedVideoTimescaleArgs(args, container, inputStreams = []) {
+  if (!isMovieContainer(container)) return;
+  const videos = inputStreams.filter((stream) => (stream.codec_type || stream.type) === "video");
+  if (videos.length > 0 && videos.every((stream) => stream.time_base === "1/1000")) {
+    args.push("-video_track_timescale", "1000");
+  }
+}
+
 module.exports = {
   AAC_MOVIE_TIMESCALE,
   exactMovieTimescale,
@@ -224,6 +232,7 @@ module.exports = {
   pushChapterCarrierExclusions,
   pushContainerCopyCodecs,
   pushMp4TrueHdOutputArgs,
+  pushPreservedVideoTimescaleArgs,
   pushOutputAudioCodecs,
   pushOutputAudioMetadata,
   sourceAudioSpec,

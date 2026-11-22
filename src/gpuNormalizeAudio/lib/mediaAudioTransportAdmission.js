@@ -17,6 +17,8 @@ function requireAudioTransport(handoff, clock, tools) {
   assert.equal(transport.output.file, handoff.temporary);
   assert.ok(sameFileGeneration(transport.output.identity, handoff.candidate.identity, true), "Transport output changed before handoff");
   assert.deepEqual(transport.decoder, tools.decoder); assert.deepEqual(transport.prober, tools.prober);
+  assert.deepEqual(transport.request.eofContext ?? null, clock.eofContext ?? null, "Transport and clock bind different EOF contexts");
+  assert.deepEqual(transport.request.sourceClockTick ?? null, clock.sourceClockTick ?? null, "Transport and clock bind different source ticks");
   assert.deepEqual(transport.request.audioMap.map(({ rate, ...map }) => map), clock.audioMap.map(({ rate, ...map }) => map));
   for (const input of transport.inputs) {
     if (input.file === transport.output.file) continue; // This exact generation was renamed by the handoff.

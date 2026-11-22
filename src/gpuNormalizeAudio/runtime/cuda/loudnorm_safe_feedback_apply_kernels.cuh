@@ -112,6 +112,21 @@ extern "C" __global__ void safe_feedback_apply6_f64_kernel(
     __shared__ double tile_energy_s[SAFE_FEEDBACK_TILE_FRAMES * 5U];
     __shared__ double gain_reduction0_s;
     __shared__ double gain_reduction1_s;
+    __shared__ unsigned int hist_s[1000];
+    __shared__ double energies_s[1000];
+    __shared__ unsigned int nz_mask_s[32];
+
+    for (unsigned int bin = c; bin < 1000U; bin += channels) {
+        hist_s[bin] = hist[bin];
+        energies_s[bin] = hist_energies[bin];
+    }
+    __syncthreads();
+    if (c == 0U) {
+        for (unsigned int w = 0U; w < 32U; w++) nz_mask_s[w] = 0U;
+        for (unsigned int bin = 0U; bin < 1000U; bin++) {
+            if (hist_s[bin] != 0U) nz_mask_s[bin >> 5] |= (1U << (bin & 31U));
+        }
+    }
 
     if (c == 0U) {
         short_index_s = state_i[FB_I_SHORT_INDEX];
@@ -485,12 +500,17 @@ extern "C" __global__ void safe_feedback_apply6_f64_kernel(
                     if (source_precomputed) short_sum_s = input_short_sum;
                     if (input_window_s >= 3) {
                         double e = (source_precomputed ? input_hist4_sum : (window_sums[input_window_s] + window_sums[input_window_s - 1] + window_sums[input_window_s - 2] + window_sums[input_window_s - 3])) / (double)(frames_per_window * 4U);
-                        if (e >= hist_boundaries[0]) hist[hist_index_from_boundaries_dev(e, hist_boundaries)]++;
+                        if (e >= hist_boundaries[0]) {
+                            int bin = hist_index_from_boundaries_dev(e, hist_boundaries);
+                            hist_s[bin]++;
+                            nz_mask_s[bin >> 5] |= (1U << (bin & 31));
+                        }
                     }
                 }
-                const double global = gated_loudness_lut_boundaries_dev(hist, hist_energies, hist_boundaries);
+                double global;
+                double relative_threshold;
+                gated_and_relative_loudness_nz_dev(hist_s, energies_s, hist_boundaries, nz_mask_s, &global, &relative_threshold);
                 const double shortterm = energy_to_loudness_dev(short_sum_s / (double)(frames_per_window * 30U));
-                const double relative_threshold = relative_threshold_lut_dev(hist, hist_energies);
                 if (above_threshold_s == 0) {
                     double shortterm_out = energy_to_loudness_dev(out_short_sum_s / (double)(frames_per_window * 30U));
                     if (shortterm > measured_thresh) prev_delta_s *= 1.0058;
@@ -514,6 +534,9 @@ extern "C" __global__ void safe_feedback_apply6_f64_kernel(
         __syncthreads();
     }
 
+    for (unsigned int bin = c; bin < 1000U; bin += channels) {
+        hist[bin] = hist_s[bin];
+    }
     if (slot >= 0 && (!skip_feedback_s || parallel_r128_out_feedback)) {
         out_states[state_base + 0] = v1;
         out_states[state_base + 1] = v2;

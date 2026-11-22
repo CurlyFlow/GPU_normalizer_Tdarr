@@ -34,7 +34,12 @@ def run_apply_passes(cuda, args, buffers, *, cuda_session=None, cfg, kernels, bi
     result.apply_setup_wall_time += time.perf_counter() - setup_t0
 
     try:
-        if async_apply.ready and not is_short_first_frame(args, cfg):
+        if (
+            async_apply.ready
+            and not is_short_first_frame(args, cfg)
+            and not getattr(args, 'swr_downsample_96k_f32', False)
+            and not getattr(args, 'swr_upsample_48k_f32', False)
+        ):
             run_async_apply(ctx, result, async_apply)
         else:
             run_sync_apply(ctx, result)

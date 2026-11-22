@@ -38,24 +38,26 @@ function decodedFingerprint(executable, file, index, format) {
 async function verifyCopiedAudio({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffmpegPath }) {
   const original = sourceStreams.filter(stream => stream.type === "audio");
   const candidate = candidateStreams.filter(stream => stream.type === "audio");
-  const results = [];
-  for (const map of audioMap.filter(value => value.compareSamples)) {
+  return await Promise.all(audioMap.filter(value => value.compareSamples).map(async map => {
     const evidence = { map_id: map.id, status: "held", errors: [] };
     try {
       const before = original[map.sourceIndex], after = candidate[map.candidateIndex];
       if (!before || !after || Number(before.channels) !== Number(after.channels)
           || Number(before.sample_rate) !== Number(after.sample_rate)) throw Error("Copied audio native channels/rate changed");
       const format = [nativePcmFormat(before), nativePcmFormat(after)].includes("f64le") ? "f64le" : "f32le";
-      evidence.source = await decodedFingerprint(ffmpegPath, sourceFile, map.sourceIndex, format);
-      evidence.candidate = await decodedFingerprint(ffmpegPath, candidateFile, map.candidateIndex, format);
+      const [source, cand] = await Promise.all([
+        decodedFingerprint(ffmpegPath, sourceFile, map.sourceIndex, format),
+        decodedFingerprint(ffmpegPath, candidateFile, map.candidateIndex, format),
+      ]);
+      evidence.source = source;
+      evidence.candidate = cand;
       if (evidence.source.bytes !== evidence.candidate.bytes || evidence.source.sha256 !== evidence.candidate.sha256) {
         throw Error("Copied audio decoded samples changed");
       }
       evidence.status = "pass";
     } catch (error) { evidence.errors.push(error.message); }
-    results.push(evidence);
-  }
-  return results;
+    return evidence;
+  }));
 }
 
 module.exports = { verifyCopiedAudio };
