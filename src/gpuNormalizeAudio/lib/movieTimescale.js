@@ -21,9 +21,15 @@ function finalMuxMovieTimescale({ inputFile, inputStreams, audioSpecs, outputFil
   }
   const copiedAudio = new Set(audioSpecs.filter(spec => spec.kind === "source").map(spec => spec.stream.index));
   for (const stream of inputStreams) {
-    if ((stream.codec_type || stream.type) === "audio") {
+    const type = stream.codec_type || stream.type;
+    if (type === "audio") {
       if (!copiedAudio.has(stream.index)) continue;
       if (stream.sample_rate !== undefined) denominators.push(stream.sample_rate);
+    } else if (type !== "video") {
+      // Subtitle (e.g. mov_text 1/1000000) and data tracks do not need their
+      // microsecond timescale folded into mvhd; doing so inflates movie_timescale
+      // (e.g. lcm(96000, 1e6)=24M) and overflows 32-bit stts chapter durations.
+      continue;
     }
     if (stream.time_base === undefined) continue;
     const match = /^(\d{1,20})\/(\d{1,20})$/.exec(String(stream.time_base));
