@@ -55,12 +55,19 @@ function buildFinalMuxCommand({
   audioStreams = [],
   audioBitrate = "192k",
   movieTimescale = null,
+  normalizedInputOffsets = null,
+  preserveInputTimestamps = false,
   tmpOutputFilePath,
 }) {
   const resolvedAudioSpecs = audioSpecs || buildFinalAudioSpecs(audioPlans, skippedAudioPlans, audioStreams);
-  const muxArgs = [ffmpegPath, "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y", "-i", inputFile];
+  const muxArgs = [ffmpegPath, "-hide_banner", "-nostats", "-nostdin", "-progress", "pipe:2", "-y"];
+  if (preserveInputTimestamps) muxArgs.push("-copyts");
+  muxArgs.push("-i", inputFile);
   for (const spec of resolvedAudioSpecs) {
-    if (spec.kind === "normalizedFile") muxArgs.push("-i", spec.plan.normalizedAudio);
+    if (spec.kind !== "normalizedFile") continue;
+    const offset = normalizedInputOffsets?.get?.(spec.plan.normalizedAudio);
+    if (offset) muxArgs.push("-itsoffset", String(offset));
+    muxArgs.push("-i", spec.plan.normalizedAudio);
   }
   pushBasePackageMaps(muxArgs, resolvedAudioSpecs, { container, inputStreams });
   pushContainerCopyCodecs(muxArgs);

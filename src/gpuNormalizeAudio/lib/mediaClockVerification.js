@@ -201,7 +201,12 @@ function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, can
       const candidateTimeline = probeAudioTimeline(candidateFile, map.candidateIndex, candidate, ffprobePath, directory, candidateTick, evidenceCache);
       const eofEntry = eofContext?.streams?.[map.candidateIndex];
       let timeline;
-      if (usesNormalizedEof(eofEntry, sourceTimeline)) {
+      if (eofEntry?.mode === "normalized-mkv-aac") {
+        assert.equal(eofEntry.id, map.id, "Normalized MKV EOF entry ID differs");
+        assert.equal(eofEntry.sourceIndex, map.sourceIndex, "Normalized MKV EOF source ordinal differs");
+        assert.equal(candidateTimeline.rate, eofEntry.encodedRate, "Normalized MKV AAC rate differs from EOF context");
+        timeline = compareAudioTimelines(sourceTimeline, candidateTimeline, offset, BigInt(eofEntry.cpuDecodedSamples));
+      } else if (usesNormalizedEof(eofEntry, sourceTimeline)) {
         assert.equal(eofEntry.id, map.id, "Normalized EOF entry ID differs");
         assert.equal(eofEntry.sourceIndex, map.sourceIndex, "Normalized EOF source ordinal differs");
         assert.equal(candidateTimeline.rate, eofEntry.encodedRate, "Normalized AAC rate differs from EOF context");

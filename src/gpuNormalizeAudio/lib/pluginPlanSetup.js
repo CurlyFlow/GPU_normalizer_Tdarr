@@ -122,9 +122,10 @@ function createPluginPlanSetup({
     const audioSpecs = buildFinalAudioSpecs(audioPlanSet.muxInputs.final.normalize,
       audioPlanSet.muxInputs.final.copy, audioStreams, gainSkipped);
     return { audioSpecs, outputContract: createOutputStreamContract({ inputStreams, audioSpecs, container }),
-      buildMux: () => buildFinalMuxCommand({ ffmpegPath: args.ffmpegPath, inputFile: args.inputFileObj._id,
+      buildMux: (muxOptions = {}) => buildFinalMuxCommand({ ffmpegPath: args.ffmpegPath, inputFile: args.inputFileObj._id,
         inputStreams, audioSpecs, container, audioBitrate, tmpOutputFilePath,
-        movieTimescale: finalMuxMovieTimescale({ inputFile: args.inputFileObj._id, inputStreams, audioSpecs, outputFile: tmpOutputFilePath }) }) };
+        movieTimescale: finalMuxMovieTimescale({ inputFile: args.inputFileObj._id, inputStreams, audioSpecs, outputFile: tmpOutputFilePath }),
+        ...muxOptions }) };
   };
   const finalOutput = finalOutputFor(new Set());
 

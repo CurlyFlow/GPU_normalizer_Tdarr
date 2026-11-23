@@ -63,7 +63,7 @@ async function tryDirectClockFinalMux({
   tmpOutputFilePath,
 }) {
   if (process.env.LOUDNORM_GPU_DIRECT_CLOCK_MUX === "0") return { used: false };
-  if (!inputFile || !isMovieContainer(container)) return { used: false };
+  if (!inputFile || !isMovieContainer(container) || !fs.existsSync(inputFile)) return { used: false };
   if (!Array.isArray(audioSpecs) || audioSpecs.length === 0
       || !audioSpecs.every(spec => spec.kind === "normalizedFile" && spec.plan?.normalizedAudio)) {
     return { used: false };
