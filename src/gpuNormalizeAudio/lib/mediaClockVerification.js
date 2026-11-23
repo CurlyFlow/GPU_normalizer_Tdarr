@@ -98,8 +98,9 @@ async function prewarmClockEvidence(spec, evidenceCache, extraFramehashes = []) 
   await runTasksWithConcurrency(tasks, 6);
 }
 
-function readStreamExtradata(file, videoOrdinal, ffprobePath) {
-  const result = spawnSync(ffprobePath, ["-v", "error", "-select_streams", `v:${videoOrdinal}`,
+function readStreamExtradata(file, selector, ffprobePath) {
+  const select = typeof selector === "number" ? `v:${selector}` : String(selector);
+  const result = spawnSync(ffprobePath, ["-v", "error", "-select_streams", select,
     "-show_data", "-show_streams", file], { encoding: "utf8", timeout: 30000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0) return null;
   const bytes = [];
@@ -115,6 +116,26 @@ function readStreamExtradata(file, videoOrdinal, ffprobePath) {
     }
   }
   return bytes.length ? Buffer.from(bytes) : null;
+}
+
+function stripMovTextBtrt(raw) {
+  if (!raw || raw.length === 0) return null;
+  let end = raw.length;
+  // FFmpeg movenc appends an optional 20-byte `btrt` bitrate box when remuxing
+  // `mov_text` (`tx3g`) tracks without `-write_btrt 0`; strip trailing `btrt`
+  // boxes and require exact byte identity of the underlying `tx3g` header.
+  while (end >= 20 && raw.readUInt32BE(end - 20) === 20
+      && raw.subarray(end - 16, end - 12).toString("ascii") === "btrt") {
+    end -= 20;
+  }
+  return end > 0 ? raw.subarray(0, end) : null;
+}
+
+function equivalentMovTextExtradata(sourceFile, sourceStreamIndex, candidateFile, candidateStreamIndex, ffprobePath) {
+  if (!ffprobePath) return false;
+  const before = stripMovTextBtrt(readStreamExtradata(sourceFile, String(sourceStreamIndex), ffprobePath));
+  const after = stripMovTextBtrt(readStreamExtradata(candidateFile, String(candidateStreamIndex), ffprobePath));
+  return Boolean(before && after && Buffer.compare(before, after) === 0);
 }
 
 function normalizeHvccCompleteness(raw) {
@@ -250,4 +271,5 @@ function verifyClockFiles(spec) {
     common_offset: { numerator: String(offset.numerator), denominator: String(offset.denominator) }, errors };
 }
 
-module.exports = { verifyClockFiles, verifyVideoClocks, verifyMappedAudioClocks, createEvidenceCache, prewarmClockEvidence };
+module.exports = { verifyClockFiles, verifyVideoClocks, verifyMappedAudioClocks, createEvidenceCache, prewarmClockEvidence,
+  equivalentMovTextExtradata, stripMovTextBtrt };
