@@ -53,10 +53,17 @@ Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.
 
 ## Flow Topologies
 
-![Tdarr Flow Topologies: Standalone vs 3-Node Integrity Pipeline](pictures/pipeline-flow.svg)
+### 1. Standalone Normalizer Flow
 
-1. **Standalone Normalizer Flow:** Drop **GPU Normalize Audio** directly into any Tdarr Flow (for example before *Replace Original File*).
-2. **Full 3-Node Integrity Pipeline (Optional):** Wrap **GPU Normalize Audio** with **Media Pipeline Helper** (`phase = prepare` before audio, `phase = finish` after both audio outputs). Connect `prepare` **Output 3** directly to `finish` to resume verified checkpoints without re-normalizing or re-encoding.
+Drop **GPU Normalize Audio** directly into any Tdarr Flow and connect **Output 1** to **Replace Original File** (or any downstream step of your choice). `GPU Normalize Audio` never overwrites or deletes files on its own.
+
+![Tdarr Standalone Flow: Input File -> GPU Normalize Audio -> Replace Original File](pictures/tdarr-flow-standalone.png)
+
+### 2. Full 3-Node Integrity Pipeline (Optional, with Media Pipeline Helper)
+
+Wrap **GPU Normalize Audio** with **Media Pipeline Helper** (`phase = prepare` before audio, `phase = finish` after both audio outputs). Connect `prepare` **Output 3** directly to `finish` to resume verified checkpoints without re-normalizing or re-encoding. Do **not** add *Replace Original File* after `finish` — `Media Pipeline Helper (Finish)` handles verified atomic publication into `Completed Directory` and optional Radarr/Sonarr handoff directly.
+
+![Tdarr 3-Node Pipeline Flow: Prepare -> GPU Normalize Audio -> Finish](pictures/tdarr-flow-3node.png)
 
 ---
 
@@ -94,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 
 ## GPU Normalize Audio — UI & Settings
 
-![GPU Normalize Audio Plugin UI](pictures/gpu-normalize-audio-ui.svg)
+![GPU Normalize Audio Plugin Settings in Tdarr](pictures/tdarr-gpu-normalize-audio-ui.png)
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -135,7 +142,16 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
    - Embeds preserved and companion SRT subtitles (`mov_text` / text tracks), verifies full original-relative A/V/subtitle/timing/metadata integrity, and publishes atomically to the configured Completed Directory.
    - Optionally notifies **Radarr** or **Sonarr** via API (`Arr Host` + node-local `Arr API Key`, never written into logs or continuation files) and records durable import receipts.
 
-![Media Pipeline Helper Plugin UI](pictures/media-pipeline-helper-ui.svg)
+<details>
+<summary>Real Tdarr Plugin UI Screenshots — <code>prepare</code> vs. <code>finish</code></summary>
+
+#### `phase = prepare` (Admission, Cleanup & Global CPU/GPU Limits)
+![Media Pipeline Helper Prepare Settings in Tdarr](pictures/tdarr-media-pipeline-helper-prepare-ui.png)
+
+#### `phase = finish` (HEVC Video, Subtitles, Publication & Arr Handoff — CPU/GPU Limits Inherited)
+![Media Pipeline Helper Finish Settings in Tdarr](pictures/tdarr-media-pipeline-helper-finish-ui.png)
+
+</details>
 
 | Setting | Phase | Default | Description |
 | --- | --- | --- | --- |
@@ -174,7 +190,7 @@ Active source for both public plugins lives under [`src/`](src/); immutable norm
 - **Streaming Runtime & Native Helpers (Python / C):** [`src/gpuNormalizeAudio/runtime/bin/`](src/gpuNormalizeAudio/runtime/bin/) — streaming two-pass orchestration plus native C helpers (`audio_clock_mux`, `aac_encode_mt`, `opx_loudnorm_channel_stats`).
 - **CUDA Kernels (CUDA C/C++):** [`src/gpuNormalizeAudio/runtime/cuda/`](src/gpuNormalizeAudio/runtime/cuda/) — GPU ports of FFmpeg `af_loudnorm.c` EBU R128 loudness, true-peak, dynamic gain/limiter feedback, and exact SWR resampling.
 - **Media Pipeline Helper (JS / Python):** [`src/mediaPipelineHelper/lib/mediaPipelineEntry.js`](src/mediaPipelineHelper/lib/mediaPipelineEntry.js), [`lib/`](src/mediaPipelineHelper/lib/), & [`runtime/`](src/mediaPipelineHelper/runtime/) — `prepare`/`finish` orchestration, original-relative A/V/subtitle/clock/metadata evidence verification, NVENC/HEVC handling, atomic publication, and Radarr/Sonarr handoff.
-- **Auto-Generated Visuals (`pictures/`):** [`scripts/generate_pictures.js`](scripts/generate_pictures.js) renders [`pictures/`](pictures/) deterministically from plugin metadata (`pluginDetails.js`, `mediaPipelineDetails.js`) and the `README.md` benchmark table. Pictures refresh automatically during release staging and are drift-checked by `./scripts/quality-check` (`node scripts/generate_pictures.js --check`).
+- **Visuals & Real Tdarr Screenshots (`pictures/`):** Live Tdarr WebUI flow & plugin screenshots under [`pictures/`](pictures/) alongside [`pictures/performance.svg`](pictures/performance.svg) auto-generated from the `README.md` benchmark table via [`scripts/generate_pictures.js`](scripts/generate_pictures.js) (refreshed during release staging and verified by `./scripts/quality-check`).
 - **Parity Diagnostics & Quality Gates:** [`diagnostics/`](diagnostics/) (sample-accurate `f32le` diff tools) and [`scripts/`](scripts/) (contract, manifest, picture-sync, and quality checks).
 
 ---

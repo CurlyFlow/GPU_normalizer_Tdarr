@@ -37,6 +37,7 @@ src/**/aac_encode_mt
 .playwright-mcp/
 socket*.txt
 *.png
+!pictures/*.png
 work/
 results/
 bench/results/
