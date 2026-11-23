@@ -7,14 +7,20 @@ const { copiedVideoShift, transformedPacketShift } = require("./mediaClockEviden
 const { verifyMappedAudioClocks } = require("./mediaClockVerification");
 const { verifyCopiedAudio } = require("./mediaCopiedAudio");
 const { fileDigest } = require("./mediaEvidenceFiles");
-const { verifyMetadataCarriers } = require("./mediaMetadataEvidence");
+const { isMkvToMp4Promotion, verifyMetadataCarriers } = require("./mediaMetadataEvidence");
 const { preserveVideoAudio } = require("./pipelineVideoAudio");
 
 function videoProperties(stream, normalizedRange = false) {
   return ["width", "height", "pix_fmt", "sample_aspect_ratio", "field_order", "color_range", "color_space",
     "color_transfer", "color_primaries", "chroma_location", "side_data_list"].map(key => {
     const value = stream[key] ?? null;
-    return [key, key === "color_range" && normalizedRange && value === null ? "tv" : value];
+    if (normalizedRange && value === null) {
+      if (key === "color_range") return [key, "tv"];
+      // H.265 Annex E specifies chroma_loc_info_present_flag == 0 as `left` (type 0);
+      // hevc_nvenc omits this flag on 4:2:0 `left` sources.
+      if (key === "chroma_location") return [key, "left"];
+    }
+    return [key, value];
   });
 }
 
@@ -92,8 +98,11 @@ async function verifyVideoStage(request, directory, tools) {
   const clock = verifyMappedAudioClocks(spec, offset);
   const copiedAudio = await verifyCopiedAudio(spec);
   const errors = [...clock.errors, ...copiedAudio.flatMap(item => item.errors)];
-  const metadata = verifyMetadataCarriers(inspectMedia(request.sourceFile, tools.ffprobe), inspectMedia(preserved.output, tools.ffprobe),
-    { numerator: String(offset.numerator), denominator: String(offset.denominator) });
+  const beforeMedia = inspectMedia(request.sourceFile, tools.ffprobe);
+  const afterMedia = inspectMedia(preserved.output, tools.ffprobe);
+  const metadata = verifyMetadataCarriers(beforeMedia, afterMedia,
+    { numerator: String(offset.numerator), denominator: String(offset.denominator) },
+    { containerPromotion: isMkvToMp4Promotion(beforeMedia, afterMedia) });
   return { reference: null, referencePackets, videos,
     commonOffset: { numerator: String(offset.numerator), denominator: String(offset.denominator) },
     audio: clock.audio, audioWindows: preserved.windows, copiedAudio, metadata, errors, output: { file: preserved.output, identity: fileDigest(preserved.output) },

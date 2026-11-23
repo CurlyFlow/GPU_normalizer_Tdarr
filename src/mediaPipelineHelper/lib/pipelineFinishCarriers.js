@@ -6,7 +6,7 @@ const { inspectMedia } = require("./mediaSourceProbe");
 const { framehash } = require("./mediaFrameEvidence");
 const { copiedVideoShift } = require("./mediaClockEvidence");
 const { equivalentMovTextExtradata } = require("./mediaClockVerification");
-const { verifyMetadataCarriers, verifyStreamMetadata, verifyCopiedStreamProperties } = require("./mediaMetadataEvidence");
+const { isMkvToMp4Promotion, verifyMetadataCarriers, verifyStreamMetadata, verifyCopiedStreamProperties } = require("./mediaMetadataEvidence");
 const { verifyChapterCarrier } = require("./mediaChapterCarrier");
 const { verifySubtitleExtractions } = require("./pipelineSubtitleEvidence");
 
@@ -34,9 +34,8 @@ function packetCopy(sourceFile, candidateFile, source, candidate, offset, tools,
 function preparationCarriers(request, chain, tools, directory) {
   const source = inspectMedia(request.originalFile, tools.ffprobe), candidate = inspectMedia(request.preparedFile, tools.ffprobe);
   const offset = chain.preparation.clock.common_offset;
-  const containerPromotion = String(source.format?.format_name || "").split(",").includes("matroska")
-    && String(candidate.format?.format_name || "").split(",").includes("mov");
-  const metadata = verifyMetadataCarriers(source, candidate, offset);
+  const containerPromotion = isMkvToMp4Promotion(source, candidate);
+  const metadata = verifyMetadataCarriers(source, candidate, offset, { containerPromotion });
   const copies = chain.preparation.intent.mapping.streams.map(map => {
     const before = source.streams.find(stream => stream.index === map.sourceIndex);
     const after = candidate.streams.find(stream => stream.index === map.preparedIndex);
@@ -81,8 +80,13 @@ function audioCarriers(request, chain, tools, directory) {
 function verifyFinishCarriers(request, chain, tools, directory) {
   const preparation = preparationCarriers(request, chain, tools, directory);
   const audio = audioCarriers(request, chain, tools, directory);
-  const videos = chain.videos.map(receipt => verifyMetadataCarriers(inspectMedia(receipt.request.sourceFile, tools.ffprobe),
-    inspectMedia(receipt.output.file, tools.ffprobe), receipt.commonOffset));
+  const videos = chain.videos.map(receipt => {
+    const before = inspectMedia(receipt.request.sourceFile, tools.ffprobe);
+    const after = inspectMedia(receipt.output.file, tools.ffprobe);
+    return verifyMetadataCarriers(before, after, receipt.commonOffset, {
+      containerPromotion: isMkvToMp4Promotion(before, after),
+    });
+  });
   return { status: "pass", preparation, audio, videos };
 }
 

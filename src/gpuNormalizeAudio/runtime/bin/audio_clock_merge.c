@@ -223,8 +223,10 @@ static int run_merge_or_mux(char **arguments, int retime_audio)
     if (video_scale > 0) av_dict_set_int(&options, "video_track_timescale", video_scale, 0);
     for (unsigned i = 0; i < plan.count; i++) if (clock_requires_fragments(&plan.tracks[i])) fragmented = 1;
     if (fragmented) {
-        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof", 0);
+        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
         av_dict_set(&options, "frag_duration", "500000", 0);
+    } else {
+        av_dict_set(&options, "movflags", "+use_metadata_tags", 0);
     }
     if ((result = avformat_write_header(output, &options)) < 0) goto done;
     if (av_dict_count(options)) { result = AVERROR(EINVAL); goto done; }

@@ -2,7 +2,37 @@
 
 const assert = require("node:assert/strict");
 
-const MKV_MP4_GENERATED_STREAM_TAG = /^(?:creation_time|encoder|handler_name|vendor_id|duration|bps|number_of_frames|number_of_bytes|_statistics_(?:writing_app|writing_date_utc|tags))(?:-[a-z]{2,3})?$/;
+// Complete ISO-639-1 -> ISO-639-2/T table from FFmpeg libavformat/avlanguage.c.
+const ISO639_1_TO_2 = Object.fromEntries((
+  "aa:aar ab:abk ae:ave af:afr ak:aka am:amh an:arg ar:ara as:asm av:ava ay:aym az:aze ba:bak be:bel bg:bul bh:bih bi:bis bm:bam bn:ben bo:bod br:bre bs:bos "
+  + "ca:cat ce:che ch:cha co:cos cr:cre cs:ces cu:chu cv:chv cy:cym da:dan de:deu dv:div dz:dzo ee:ewe el:ell en:eng eo:epo es:spa et:est eu:eus fa:fas ff:ful "
+  + "fi:fin fj:fij fo:fao fr:fra fy:fry ga:gle gd:gla gl:glg gn:grn gu:guj gv:glv ha:hau he:heb hi:hin ho:hmo hr:hrv ht:hat hu:hun hy:hye hz:her ia:ina id:ind "
+  + "ie:ile ig:ibo ii:iii ik:ipk in:ind io:ido is:isl it:ita iu:iku iw:heb ja:jpn ji:yid jv:jav jw:jav ka:kat kg:kon ki:kik kj:kua kk:kaz kl:kal km:khm kn:kan "
+  + "ko:kor kr:kau ks:kas ku:kur kv:kom kw:cor ky:kir la:lat lb:ltz lg:lug li:lim ln:lin lo:lao lt:lit lu:lub lv:lav mg:mlg mh:mah mi:mri mk:mkd ml:mal mn:mon "
+  + "mo:ron mr:mar ms:msa mt:mlt my:mya na:nau nb:nob nd:nde ne:nep ng:ndo nl:nld nn:nno no:nor nr:nbl nv:nav ny:nya oc:oci oj:oji om:orm or:ori os:oss pa:pan "
+  + "pi:pli pl:pol ps:pus pt:por qu:que rm:roh rn:run ro:ron ru:rus rw:kin sa:san sc:srd sd:snd se:sme sg:sag si:sin sk:slk sl:slv sm:smo sn:sna so:som sq:sqi "
+  + "sr:srp ss:ssw st:sot su:sun sv:swe sw:swa ta:tam te:tel tg:tgk th:tha ti:tir tk:tuk tl:tgl tn:tsn to:ton tr:tur ts:tso tt:tat tw:twi ty:tah ug:uig uk:ukr "
+  + "ur:urd uz:uzb ve:ven vi:vie vo:vol wa:wln wo:wol xh:xho yi:yid yo:yor za:zha zh:zho zu:zul"
+).split(" ").map(pair => pair.split(":")));
+
+const MKV_MP4_GENERATED_STREAM_TAG = /^(?:creation_time|encoder|handler_name|vendor_id)$/;
+// Dispositions absent from FFmpeg libavformat/isom.c dash_role_map have no ISO MP4 carrier.
+const MP4_UNREPRESENTABLE_DISPOSITIONS = new Set([
+  "original", "clean_effects", "lyrics", "karaoke", "non_diegetic",
+  "metadata", "dependent", "still_image", "multilayer", "timed_thumbnails",
+]);
+
+function canonicalMp4Language(value) {
+  const primary = String(value || "").trim().toLowerCase().split(/[-_]/)[0];
+  if (!primary) return "und";
+  if (/^[a-z]{3}$/.test(primary)) return primary;
+  return ISO639_1_TO_2[primary] || "und";
+}
+
+function isMkvToMp4Promotion(before, after) {
+  return String(before?.format?.format_name || "").split(",").includes("matroska")
+    && String(after?.format?.format_name || "").split(",").includes("mov");
+}
 
 function tags(value, generated = [], pattern = null) {
   const result = {};
@@ -26,23 +56,56 @@ function sameTime(before, after, offset) {
     === BigInt(offset.numerator) * before.denominator * after.denominator;
 }
 
-function verifyMetadataCarriers(before, after, offset) {
-  // Only muxer-owned provenance/brand fields may regenerate. All custom tags,
-  // chapter titles, order and exact presentation boundaries remain mandatory.
+function sameTimeWithin(before, after, offset, toleranceNum, toleranceDen) {
+  const diffNum = (after.numerator * before.denominator - before.numerator * after.denominator) * BigInt(offset.denominator)
+    - BigInt(offset.numerator) * before.denominator * after.denominator;
+  const absDiff = diffNum < 0n ? -diffNum : diffNum;
+  const denom = before.denominator * after.denominator * BigInt(offset.denominator);
+  return absDiff * toleranceDen <= toleranceNum * denom;
+}
+
+function verifyMetadataCarriers(before, after, offset, options = {}) {
+  // Only muxer-owned provenance/brand fields may regenerate. All custom global tags
+  // remain mandatory (preserved in MP4 via -movflags +use_metadata_tags).
+  const containerPromotion = Boolean(options.containerPromotion);
   const generated = ["encoder", "major_brand", "minor_version", "compatible_brands"];
-  assert.deepEqual(tags(after.format?.tags, generated), tags(before.format?.tags, generated), "Global metadata changed");
+  const expectedGlobal = tags(before.format?.tags, generated);
+  const actualGlobal = tags(after.format?.tags, generated);
+  if (containerPromotion && typeof expectedGlobal.creation_time === "string") {
+    const subSecond = expectedGlobal.creation_time.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.\d+Z$/);
+    if (subSecond && actualGlobal.creation_time === `${subSecond[1]}.000000Z`) {
+      expectedGlobal.creation_time = actualGlobal.creation_time;
+    }
+  }
+  assert.deepEqual(actualGlobal, expectedGlobal, "Global metadata changed");
   const source = before.chapters || [], candidate = after.chapters || [];
   if (!Array.isArray(source) || !Array.isArray(candidate) || source.length !== candidate.length) throw Error("Chapter coverage changed");
   source.forEach((chapter, index) => {
     const actual = candidate[index];
-    assert.deepEqual(tags(actual.tags), tags(chapter.tags), "Chapter metadata changed");
-    for (const key of ["start", "end"]) {
-      if (!sameTime(rational(chapter[key], chapter.time_base), rational(actual[key], actual.time_base), offset)) {
-        throw Error("Chapter presentation boundary changed");
+    const beforeChapterTags = tags(chapter.tags);
+    const actualChapterTags = tags(actual.tags);
+    if (containerPromotion) {
+      // ISO MP4 chapter tracks only carry the `title` string, not custom Matroska chapter tags.
+      for (const key of Object.keys(beforeChapterTags)) {
+        if (key !== "title" && actualChapterTags[key] === undefined) delete beforeChapterTags[key];
+      }
+      if (beforeChapterTags.title === undefined && actualChapterTags.title !== undefined) {
+        beforeChapterTags.title = actualChapterTags.title;
       }
     }
+    assert.deepEqual(actualChapterTags, beforeChapterTags, "Chapter metadata changed");
+    for (const key of ["start", "end"]) {
+      const beforeTime = rational(chapter[key], chapter.time_base);
+      const afterTime = rational(actual[key], actual.time_base);
+      const zeroOriginStart = containerPromotion && index === 0 && key === "start"
+        && beforeTime.numerator === 0n && afterTime.numerator === 0n;
+      const matches = containerPromotion
+        ? (zeroOriginStart || sameTimeWithin(beforeTime, afterTime, offset, 1n, 1000n))
+        : sameTime(beforeTime, afterTime, offset);
+      if (!matches) throw Error("Chapter presentation boundary changed");
+    }
   });
-  return { status: "pass", chapters: source.length, globalTags: Object.keys(tags(before.format?.tags, generated)) };
+  return { status: "pass", chapters: source.length, globalTags: Object.keys(expectedGlobal) };
 }
 
 function verifyDisposition(source, candidate, containerPromotion) {
@@ -55,24 +118,35 @@ function verifyDisposition(source, candidate, containerPromotion) {
   for (const key of Object.keys(before)) {
     if (after[key] === before[key]) continue;
     if (key === "default" && before[key] === 0 && after[key] === 1) continue;
+    // FFmpeg isom.c dash_role_map couples hearing_impaired<->captions and visual_impaired<->descriptions.
     if (key === "captions" && before.hearing_impaired === 1 && before[key] === 0 && after[key] === 1) continue;
+    if (key === "hearing_impaired" && before.captions === 1 && before[key] === 0 && after[key] === 1) continue;
+    if (key === "descriptions" && before.visual_impaired === 1 && before[key] === 0 && after[key] === 1) continue;
+    if (key === "visual_impaired" && before.descriptions === 1 && before[key] === 0 && after[key] === 1) continue;
+    if (MP4_UNREPRESENTABLE_DISPOSITIONS.has(key) && before[key] === 1 && after[key] === 0) continue;
     throw Error("Retained stream disposition changed");
   }
 }
 
 function verifyStreamMetadata(source, candidate, transformed = false, options = {}) {
+  const containerPromotion = Boolean(options.containerPromotion);
   const generated = transformed ? ["encoder"] : [];
-  const pattern = options.containerPromotion ? MKV_MP4_GENERATED_STREAM_TAG : null;
+  const pattern = containerPromotion ? MKV_MP4_GENERATED_STREAM_TAG : null;
   const before = tags(source.tags, generated, pattern), after = tags(candidate.tags, generated, pattern);
   // FFmpeg represents an unspecified language either as absent or `und`.
-  before.language ||= "und";
+  // ISO MP4 `mdhd` only stores 3-letter ISO-639-2 codes (2-letter/BCP-47 normalized during promotion).
+  before.language = containerPromotion ? canonicalMp4Language(before.language) : (before.language || "und");
   after.language ||= "und";
-  // ISO MP4 (`movenc.c`) cannot carry Matroska per-stream `title` tags in `.mp4` mode.
-  if (options.containerPromotion && before.title !== undefined && after.title === undefined) {
-    delete before.title;
+  // ISO MP4 (`movenc.c` `mov_write_track_udta_tag`) cannot carry arbitrary Matroska
+  // per-stream tags (`title`, `SOURCE_ID`, `BPS-*`, `DURATION-*`, `COMMENT`, etc.).
+  // Omission is allowed under containerPromotion, while mutated or fabricated tags still fail.
+  if (containerPromotion) {
+    for (const key of Object.keys(before)) {
+      if (key !== "language" && after[key] === undefined) delete before[key];
+    }
   }
   assert.deepEqual(after, before, "Retained stream metadata changed");
-  verifyDisposition(source, candidate, Boolean(options.containerPromotion));
+  verifyDisposition(source, candidate, containerPromotion);
 }
 
 function isSynthesizedAudioServiceSideData(source, candidate, containerPromotion) {
@@ -93,12 +167,21 @@ function isOmittedDefaultColorRange(source, candidate, containerPromotion) {
     && (candidate.color_space ?? null) === null && (candidate.color_transfer ?? null) === null && (candidate.color_primaries ?? null) === null);
 }
 
+function isEquivalentInterlacedFieldOrder(source, candidate, containerPromotion) {
+  // Matroska stores TFF/BFF as `tb`/`bt`, whereas ISO MP4 `fiel` reports `tt`/`bb`.
+  return Boolean(containerPromotion && source.codec_type === "video"
+    && ((source.field_order === "tb" && candidate.field_order === "tt")
+      || (source.field_order === "bt" && candidate.field_order === "bb")));
+}
+
 function verifyCopiedStreamProperties(source, candidate, options = {}) {
   const promotedSubtitle = options.containerPromotion && source.codec_type === "subtitle"
     && ["subrip", "ass"].includes(source.codec_name) && candidate.codec_name === "mov_text";
   const synthesizedAudioSideData = isSynthesizedAudioServiceSideData(source, candidate, options.containerPromotion);
   const omittedDefaultRange = isOmittedDefaultColorRange(source, candidate, options.containerPromotion);
-  const properties = ["codec_type", ...(promotedSubtitle ? [] : ["codec_name"]), "profile", "width", "height", "pix_fmt", "sample_aspect_ratio", "field_order",
+  const equivalentFieldOrder = isEquivalentInterlacedFieldOrder(source, candidate, options.containerPromotion);
+  const properties = ["codec_type", ...(promotedSubtitle ? [] : ["codec_name"]), "profile", "width", "height", "pix_fmt", "sample_aspect_ratio",
+    ...(equivalentFieldOrder ? [] : ["field_order"]),
     ...(omittedDefaultRange ? [] : ["color_range"]), "color_space", "color_transfer", "color_primaries", "chroma_location",
     ...(synthesizedAudioSideData ? [] : ["side_data_list"]),
     "channels", "channel_layout", "sample_rate", "sample_fmt"];
@@ -106,4 +189,10 @@ function verifyCopiedStreamProperties(source, candidate, options = {}) {
     "Copied stream native configuration or HDR carrier changed");
 }
 
-module.exports = { verifyMetadataCarriers, verifyStreamMetadata, verifyCopiedStreamProperties };
+module.exports = {
+  canonicalMp4Language,
+  isMkvToMp4Promotion,
+  verifyMetadataCarriers,
+  verifyStreamMetadata,
+  verifyCopiedStreamProperties,
+};

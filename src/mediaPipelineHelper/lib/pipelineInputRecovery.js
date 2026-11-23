@@ -1,6 +1,7 @@
 "use strict";
 
 const path = require("node:path");
+const { pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
 
 class UnrecoverableInputError extends Error {
   constructor(evidence) {
@@ -31,10 +32,13 @@ async function recoverInput(args, runtime) {
   const repair = { attempted: true, method: "stream-copy", originalModified: false };
   let repaired;
   try {
+    const container = previous.container || path.extname(previous._id).slice(1).toLowerCase();
+    const outputs = ["-map", "0", "-map_metadata", "0", "-map_chapters", "0", "-c", "copy"];
+    pushMp4MetadataTagsArgs(outputs, container);
     repaired = await runtime.execute(recoveryArgs, { label: "Repairing input container without re-encoding",
-      container: previous.container || path.extname(previous._id).slice(1).toLowerCase(),
+      container,
       inputs: ["-fflags", "+genpts", "-err_detect", "ignore_err", "-i", previous._id],
-      outputs: ["-map", "0", "-map_metadata", "0", "-map_chapters", "0", "-c", "copy"] });
+      outputs });
   } catch (error) {
     if (error.code === "PIPELINE_CANCELLED") throw error;
     const readable = await runtime.readableInput(recoveryArgs);

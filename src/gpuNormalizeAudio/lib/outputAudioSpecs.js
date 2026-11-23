@@ -203,6 +203,12 @@ function pushOutputAudioMetadata(args, audioSpecs, inputStreams) {
   });
 }
 
+function pushMp4MetadataTagsArgs(args, container) {
+  if (isMovieContainer(String(container || "").toLowerCase())) {
+    args.push("-movflags", "+use_metadata_tags");
+  }
+}
+
 function pushMp4TrueHdOutputArgs(args, container, copiedTrueHdStreams) {
   args.push(...mp4TrueHdOutputArgs(container, copiedTrueHdStreams));
 }
@@ -231,6 +237,7 @@ module.exports = {
   pushBasePackageMaps,
   pushChapterCarrierExclusions,
   pushContainerCopyCodecs,
+  pushMp4MetadataTagsArgs,
   pushMp4TrueHdOutputArgs,
   pushPreservedVideoTimescaleArgs,
   pushOutputAudioCodecs,

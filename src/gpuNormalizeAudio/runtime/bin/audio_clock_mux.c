@@ -242,8 +242,10 @@ int main(int argc, char **argv)
     // or coded packets excluded by the admitted presentation endpoint.
     if (fragmented) {
         /* One traf per moof makes the muxer's 1/1/1 TFRA coordinates exact. */
-        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof", 0);
+        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
         av_dict_set(&options, "frag_duration", "500000", 0);
+    } else {
+        av_dict_set(&options, "movflags", "+use_metadata_tags", 0);
     }
     if ((result = avformat_write_header(output, &options)) < 0) goto done;
     if (av_dict_count(options)) { result = AVERROR(EINVAL); goto done; }

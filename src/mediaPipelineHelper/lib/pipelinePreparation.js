@@ -5,8 +5,9 @@ const path = require("node:path");
 const { recoverInput } = require("./pipelineInputRecovery");
 const { bindPreparationMap } = require("./pipelinePreparationMap");
 const { bindSubtitleExtractions } = require("./pipelineSubtitleEvidence");
-const { pushChapterCarrierExclusions } = require("./outputAudioSpecs");
+const { pushChapterCarrierExclusions, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
 const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
+const { canonicalMp4Language } = require("./mediaMetadataEvidence");
 
 function isDescriptive(stream, includeSdh) {
   const title = String(stream.tags?.title || "").toLowerCase();
@@ -27,7 +28,7 @@ function extractionTarget(original, stream) {
 }
 
 const MP4_COPYABLE_VIDEO = new Set(["hevc", "h264", "mpeg4", "av1", "vp9", "mpeg2video"]);
-const MP4_COPYABLE_AUDIO = new Set(["aac", "ac3", "eac3", "dts", "mp3", "mp2", "flac", "opus", "truehd"]);
+const MP4_COPYABLE_AUDIO = new Set(["aac", "ac3", "eac3", "dts", "mp3", "flac", "opus", "truehd"]);
 const MP4_STRICT_AUDIO = new Set(["truehd", "opus", "flac"]);
 const MP4_CONVERTIBLE_SUBS = new Set(["subrip", "ass"]);
 const MP4_COPYABLE_SUBS = new Set(["mov_text", "dvd_subtitle"]);
@@ -102,7 +103,16 @@ function planPreparation(file, original, settings, exists = fs.existsSync) {
     if (retained.some(stream => stream.codec_type === "audio" && MP4_STRICT_AUDIO.has(stream.codec_name))) {
       outputs.push("-strict", "-2");
     }
+    retained.forEach((stream, outputIndex) => {
+      const rawLang = stream.tags?.language;
+      if (typeof rawLang !== "string" || !rawLang.trim()) return;
+      const normalized = canonicalMp4Language(rawLang);
+      if (normalized !== rawLang.trim().toLowerCase()) {
+        outputs.push(`-metadata:s:${outputIndex}`, `language=${normalized}`);
+      }
+    });
   }
+  pushMp4MetadataTagsArgs(outputs, container);
   const extractions = [...targets].filter(([target]) => !exists(target));
   const remuxRequired = removed.length > 0 || promoteMp4;
   return { changed: remuxRequired || extractions.length > 0, remuxRequired, container, outputs,

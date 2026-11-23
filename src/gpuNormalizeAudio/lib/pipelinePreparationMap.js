@@ -2,6 +2,7 @@
 
 const path = require("node:path");
 const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
+const { canonicalMp4Language } = require("./mediaMetadataEvidence");
 const { fileDigest } = require("./mediaEvidenceFiles");
 const { validateReceipt } = require("./mediaClockProtocol");
 const { inspectMedia } = require("./mediaSourceProbe");
@@ -18,8 +19,10 @@ function streams(file) {
   return values;
 }
 
-function language(stream) {
-  return String(stream.tags?.language || "und").toLowerCase();
+function language(stream, promotedMkv = false) {
+  return promotedMkv
+    ? canonicalMp4Language(stream.tags?.language)
+    : String(stream.tags?.language || "und").toLowerCase();
 }
 
 function bindPreparationMap(source, prepared, retainedIndices, originalId) {
@@ -51,7 +54,7 @@ function bindPreparationMap(source, prepared, retainedIndices, originalId) {
     const promotedSub = promotedMkv && stream.codec_type === "subtitle"
       && ["subrip", "ass"].includes(stream.codec_name) && actual.codec_name === "mov_text";
     if (actual.codec_type !== stream.codec_type || (!promotedSub && actual.codec_name !== stream.codec_name)
-        || (["audio", "subtitle"].includes(stream.codec_type) && language(actual) !== language(stream))
+        || (["audio", "subtitle"].includes(stream.codec_type) && language(actual) !== language(stream, promotedMkv))
         || (stream.codec_type === "audio" && (actual.channels !== stream.channels
           || String(actual.sample_rate) !== String(stream.sample_rate)))) {
       throw Error("Prepared stream differs from its selected source identity");

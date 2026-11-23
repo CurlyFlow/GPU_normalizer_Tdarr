@@ -2,7 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pushChapterCarrierExclusions } = require("./outputAudioSpecs");
+const { pushChapterCarrierExclusions, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
 
 function canonicalLanguage(value) {
   const language = String(value || "").toLowerCase();
@@ -70,6 +70,7 @@ function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", 
   }
   if (sidecars.length || streams.some((s) => s.codec_type === "subtitle")) outputs.push("-c:s", "mov_text");
   outputs.push("-ignore_unknown", "-max_muxing_queue_size", "99999", "-strict", "-2");
+  pushMp4MetadataTagsArgs(outputs, "mp4");
   return { inputs, outputs, container: "mp4", label: "Preparing final video container and subtitle tracks" };
 }
 
