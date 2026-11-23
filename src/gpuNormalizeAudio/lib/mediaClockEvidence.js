@@ -199,12 +199,24 @@ function decodedAudioTimeline(frames, rate, tick = null) {
       if (!coarseTick) {
         continuous = sameTime(start, previousEnd);
       } else {
-        const delta = subtract(start, previousEnd);
-        const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
+        const withinCoarse = (delta) => {
+          const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
+          return absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
+        };
         // Coarse container timebases (e.g. Matroska 1/1000s) quantize frame PTS
-        // onto `coarseTick` and may step by 1 tick for PAL/NTSC sync while real
-        // drops/cuts/overlaps (> 2 ticks) remain discontinuities.
-        continuous = absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
+        // onto `coarseTick` and may step by 1 tick for PAL/NTSC sync; Matroska
+        // FLAC lacing also accumulates sub-tick truncation across a lace before
+        // snapping back onto the segment's linear clock. Real drops/cuts/overlaps
+        // (> 2 ticks from both previousEnd and segment anchor) remain discontinuities.
+        continuous = withinCoarse(subtract(start, previousEnd));
+        if (!continuous) {
+          const anchor = segments[segments.length - 1];
+          const expected = {
+            numerator: anchor.start.numerator * BigInt(rate) + (samples - anchor.samples) * anchor.start.denominator,
+            denominator: anchor.start.denominator * BigInt(rate),
+          };
+          continuous = withinCoarse(subtract(start, expected));
+        }
       }
     }
     if (!continuous) {
