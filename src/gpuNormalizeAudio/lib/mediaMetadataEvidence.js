@@ -83,12 +83,23 @@ function isSynthesizedAudioServiceSideData(source, candidate, containerPromotion
     && candidate.side_data_list.every(item => item?.side_data_type === "Audio Service Type"));
 }
 
+function isOmittedDefaultColorRange(source, candidate, containerPromotion) {
+  // FFmpeg `movenc.c` omits the MP4 `colr` atom when primaries/transfer/space
+  // are all unspecified, turning Matroska's default limited range (`tv`) into
+  // absent (`null`, defaulting to `tv` in ISO MP4) on untouched `-c:v copy`.
+  return Boolean(containerPromotion && source.codec_type === "video"
+    && source.color_range === "tv" && (candidate.color_range ?? null) === null
+    && (source.color_space ?? null) === null && (source.color_transfer ?? null) === null && (source.color_primaries ?? null) === null
+    && (candidate.color_space ?? null) === null && (candidate.color_transfer ?? null) === null && (candidate.color_primaries ?? null) === null);
+}
+
 function verifyCopiedStreamProperties(source, candidate, options = {}) {
   const promotedSubtitle = options.containerPromotion && source.codec_type === "subtitle"
     && ["subrip", "ass"].includes(source.codec_name) && candidate.codec_name === "mov_text";
   const synthesizedAudioSideData = isSynthesizedAudioServiceSideData(source, candidate, options.containerPromotion);
+  const omittedDefaultRange = isOmittedDefaultColorRange(source, candidate, options.containerPromotion);
   const properties = ["codec_type", ...(promotedSubtitle ? [] : ["codec_name"]), "profile", "width", "height", "pix_fmt", "sample_aspect_ratio", "field_order",
-    "color_range", "color_space", "color_transfer", "color_primaries", "chroma_location",
+    ...(omittedDefaultRange ? [] : ["color_range"]), "color_space", "color_transfer", "color_primaries", "chroma_location",
     ...(synthesizedAudioSideData ? [] : ["side_data_list"]),
     "channels", "channel_layout", "sample_rate", "sample_fmt"];
   assert.deepEqual(properties.map(key => candidate[key] ?? null), properties.map(key => source[key] ?? null),
