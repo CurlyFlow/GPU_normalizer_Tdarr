@@ -46,7 +46,9 @@ function executeCarrier(carrier, argumentsList) {
   const result = spawnSync(carrier.snapshot.file, argumentsList,
     { encoding: "utf8", timeout: 900000, maxBuffer: 1024 * 1024 });
   if (result.error || result.status !== 0 || result.stderr || result.stdout) throw Error("Source-built audio clock transport failed");
-  assert.deepEqual(fileDigest(carrier.installed.file), carrier.installed.identity, "Installed carrier changed during transport");
+  const installedNow = fileDigest(carrier.installed.file);
+  assert.equal(installedNow.sha256, carrier.installed.identity.sha256, "Installed carrier changed during transport");
+  assert.equal(installedNow.bytes, carrier.installed.identity.bytes, "Installed carrier changed during transport");
   assert.deepEqual(fileDigest(carrier.snapshot.file), carrier.snapshot.identity, "Private carrier changed during transport");
 }
 

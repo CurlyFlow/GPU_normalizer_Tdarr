@@ -12,7 +12,10 @@ function requireCarrierEvidence(carrier, plan, producer, expectedPlan) {
   const expected = fs.existsSync(installed) ? installed
     : ownerRoot !== __dirname && fs.existsSync(shared) ? shared : installed;
   assert.equal(carrier.installed.file, expected);
-  for (const artifact of [carrier.installed, carrier.snapshot, plan]) {
+  const installedNow = fileDigest(carrier.installed.file);
+  assert.ok(installedNow.sha256 === carrier.installed.identity.sha256
+    && installedNow.bytes === carrier.installed.identity.bytes, "Transport artifact changed before finish");
+  for (const artifact of [carrier.snapshot, plan]) {
     assert.ok(sameFileGeneration(artifact.identity, fileDigest(artifact.file)), "Transport artifact changed before finish");
   }
   const current = fileDigest(path.resolve(__dirname, "../runtime/bin/audio_clock_mux"));

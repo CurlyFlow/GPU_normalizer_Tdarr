@@ -1,14 +1,19 @@
 "use strict";
 
 const path = require("node:path");
-const { fileDigest, sameFileGeneration } = require("./mediaEvidenceFiles");
+const { fileDigest } = require("./mediaEvidenceFiles");
 const { moduleEvidence } = require("./mediaReferenceProof");
 
 function unchangedModules(evidence) {
   if (!evidence || !Array.isArray(evidence.modules) || !evidence.modules.length || evidence.modules.length > 4096
       || new Set(evidence.modules.map(entry => entry[0])).size !== evidence.modules.length) throw Error("Incomplete stage source generation");
   for (const [file, identity] of evidence.modules) {
-    if (!sameFileGeneration(identity, fileDigest(file))) throw Error("Stage source changed after verification");
+    // Tdarr Node periodically re-extracts identical LocalFlowPlugins with fresh
+    // inodes/mtimes. Bind stage modules by exact cryptographic content bytes.
+    const current = fileDigest(file);
+    if (current.sha256 !== identity.sha256 || current.bytes !== identity.bytes) {
+      throw Error("Stage source changed after verification");
+    }
   }
 }
 
