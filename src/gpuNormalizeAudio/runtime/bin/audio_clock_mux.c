@@ -106,9 +106,20 @@ int clock_aac_lc(const AVCodecParameters *parameters)
 int clock_movie_timescale(const AVFormatContext *input, const ClockPlan *plan)
 {
     int64_t scale = 1;
-    for (unsigned i = 0; i < input->nb_streams + input->nb_chapters; i++) {
-        AVRational base = i < input->nb_streams ? input->streams[i]->time_base
-            : input->chapters[i - input->nb_streams]->time_base;
+    for (unsigned i = 0; i < input->nb_streams; i++) {
+        enum AVMediaType type = input->streams[i]->codecpar->codec_type;
+        /* Subtitle (e.g. mov_text 1/1000000) and data/chapter tracks do not need
+           their timescale folded into mvhd; inflating movie_timescale (e.g.
+           lcm(96000, 1e6)=24M) overflows 32-bit stts chapter durations. */
+        if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO) continue;
+        AVRational base = input->streams[i]->time_base;
+        if (base.num <= 0 || base.den <= 0) return -1;
+        __int128 next = (__int128)(scale / av_gcd(scale, base.den)) * base.den;
+        if (next > INT32_MAX) return -1;
+        scale = (int64_t)next;
+    }
+    for (unsigned i = 0; i < input->nb_chapters; i++) {
+        AVRational base = input->chapters[i]->time_base;
         if (base.num <= 0 || base.den <= 0) return -1;
         __int128 next = (__int128)(scale / av_gcd(scale, base.den)) * base.den;
         if (next > INT32_MAX) return -1;
