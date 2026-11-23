@@ -160,7 +160,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 | `Keep Audio and Subtitle Languages` | `prepare` | `eng,und` | Comma-separated language codes retained during cleanup (audio normalization keeps its own explicit language selector in **GPU Normalize Audio**). |
 | `Remove Commentary Tracks` | `prepare` | `true` | Removes identified commentary audio and subtitle streams. |
 | `Remove SDH Subtitles` | `prepare` | `false` | Removes subtitles tagged as SDH (deaf and hard of hearing). |
-| `Subtitle Codecs to Remove` | `prepare` | `hdmv_pgs_subtitle,dvd_subtitle,dvb_subtitle,eia_608,timed_id3,pgs,vobsub` | Comma-separated subtitle codecs stripped during prepare (leave empty to keep all codecs). |
+| `Subtitle Codecs to Remove` | `prepare` | `hdmv_pgs_subtitle`, `dvd_subtitle`, `dvb_subtitle`, `eia_608`, `timed_id3`, `pgs`, `vobsub` | Comma-separated subtitle codecs stripped during prepare (leave empty to keep all codecs). |
 | `Companion Subtitle Languages` | `finish` | `eng` | Comma-separated languages imported from companion `.srt` files. |
 | `Companion Subtitle Default Language` | `finish` | `eng` | Default language tag assigned to untagged companion `.srt` files. |
 | `Include Forced Companion Subtitles` | `finish` | `true` | Includes matching forced companion subtitles. |
