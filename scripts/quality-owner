@@ -28,7 +28,7 @@ if [[ ${QUALITY_SKIP_LOCAL_SOURCE:-0} != 1 && -d src/gpuNormalizeAudio ]]; then
 fi
 
 printf 'quality: lint\n'
-npx eslint "${targets[@]}" scripts/quality-contracts.test.js
+npx eslint "${targets[@]}" scripts/quality-contracts.test.js scripts/generate_pictures.js
 if [[ -d work/compare ]]; then
   npx eslint work/compare work/cpu_gpu_compare.js work/compare-self-test.js
 fi
@@ -37,8 +37,8 @@ printf 'quality: source structure\n'
 if [[ -d tools ]]; then
   python3 scripts/source-quality.py tools
 fi
-if [[ -f private/mediaPipelineHelper/runtime/bin/tdarr_media_names.py ]]; then
-  python3 scripts/source-quality.py private/mediaPipelineHelper/runtime/bin/tdarr_media_names.py private/mediaPipelineHelper/runtime/bin/media_*.py work/media_*.py work/test_tdarr_media_names.py work/test_media_*.py
+if [[ -f src/mediaPipelineHelper/runtime/bin/tdarr_media_names.py ]]; then
+  python3 scripts/source-quality.py src/mediaPipelineHelper/runtime/bin/tdarr_media_names.py src/mediaPipelineHelper/runtime/bin/media_*.py work/media_*.py work/test_tdarr_media_names.py work/test_media_*.py
 fi
 SOURCE_QUALITY_MAX_LINES=1500 SOURCE_QUALITY_MAX_COMPLEXITY=150 python3 scripts/source-quality.py "${targets[0]}"
 if [[ ${#targets[@]} -gt 1 ]]; then
@@ -84,6 +84,11 @@ bash -n "${shell_files[@]}"
 if [[ -f src/gpuNormalizeAudio/runtime/bin/cuda_abi_validation.py ]]; then
   printf 'quality: CUDA ABI ownership\n'
   python3 src/gpuNormalizeAudio/runtime/bin/cuda_abi_validation.py
+fi
+
+if [[ ${QUALITY_SKIP_LOCAL_SOURCE:-0} != 1 && -f scripts/generate_pictures.js ]]; then
+  printf 'quality: pictures\n'
+  node scripts/generate_pictures.js --check
 fi
 
 printf 'quality: ownership contracts\n'

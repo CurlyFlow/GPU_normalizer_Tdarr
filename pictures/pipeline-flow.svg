@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="430" viewBox="0 0 980 430" role="img" aria-label="Tdarr Flow Topology: Standalone vs 3-Node Integrity Pipeline">
+  <defs>
+    <marker id="arrow-cyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/></marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#a78bfa"/></marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399"/></marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 1 L 10 5 L 0 9 z" fill="#fb7185"/></marker>
+  </defs>
+  <style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }</style>
+  <rect width="980" height="430" rx="14" fill="#0b1120" stroke="#1e293b" stroke-width="1.5"/>
+  <text x="28" y="36" fill="#f8fafc" font-size="18" font-weight="700">Tdarr Flow Topologies</text>
+  <text x="28" y="55" fill="#94a3b8" font-size="12">Use GPU Normalize Audio standalone, or wrap it with Media Pipeline Helper (prepare + finish) for end-to-end integrity.</text>
+  <!-- Mode 1: Standalone -->
+  <rect x="24" y="72" width="932" height="104" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+  <text x="40" y="94" fill="#38bdf8" font-size="12" font-weight="700" letter-spacing="0.05em">1. STANDALONE NORMALIZER FLOW</text>
+  <rect x="44" y="108" width="170" height="50" rx="8" fill="#0f172a" stroke="#475569"/>
+  <text x="129" y="130" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Input File</text>
+  <text x="129" y="147" text-anchor="middle" fill="#94a3b8" font-size="11">Any MKV / MP4 / MOV</text>
+  <line x1="214" y1="133" x2="310" y2="133" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+  <rect x="316" y="104" width="320" height="58" rx="9" fill="#0f172a" stroke="#38bdf8" stroke-width="1.8"/>
+  <text x="476" y="128" text-anchor="middle" fill="#f8fafc" font-size="14" font-weight="700">GPU Normalize Audio</text>
+  <text x="476" y="147" text-anchor="middle" fill="#7dd3fc" font-size="11">CUDA loudnorm · +2ch fallback · direct clock mux</text>
+  <line x1="636" y1="133" x2="736" y2="133" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="686" y="125" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="600">Out 1</text>
+  <rect x="742" y="108" width="194" height="50" rx="8" fill="#0f172a" stroke="#34d399"/>
+  <text x="839" y="130" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="600">Replace / Next Node</text>
+  <text x="839" y="147" text-anchor="middle" fill="#94a3b8" font-size="11">100% decoded CPU parity</text>
+  <!-- Mode 2: 3-Node Pipeline -->
+  <rect x="24" y="192" width="932" height="218" rx="10" fill="#111827" stroke="#1e293b" stroke-width="1"/>
+  <text x="40" y="214" fill="#c084fc" font-size="12" font-weight="700" letter-spacing="0.05em">2. FULL 3-NODE PIPELINE (ORIGINAL-RELATIVE INTEGRITY + ARR HANDOFF)</text>
+  <!-- Prepare -->
+  <rect x="44" y="232" width="246" height="86" rx="9" fill="#0f172a" stroke="#a78bfa" stroke-width="1.8"/>
+  <text x="167" y="255" text-anchor="middle" fill="#f8fafc" font-size="13.5" font-weight="700">Media Pipeline Helper</text>
+  <text x="167" y="272" text-anchor="middle" fill="#c084fc" font-size="11.5" font-weight="600">phase = prepare</text>
+  <text x="167" y="290" text-anchor="middle" fill="#94a3b8" font-size="10.5">Admission · cleanup · SRT extract</text>
+  <text x="167" y="305" text-anchor="middle" fill="#7dd3fc" font-size="10.5">Sets global CPU &amp; GPU limits</text>
+  <!-- Audio -->
+  <rect x="366" y="232" width="248" height="86" rx="9" fill="#0f172a" stroke="#38bdf8" stroke-width="1.8"/>
+  <text x="490" y="255" text-anchor="middle" fill="#f8fafc" font-size="13.5" font-weight="700">GPU Normalize Audio</text>
+  <text x="490" y="272" text-anchor="middle" fill="#7dd3fc" font-size="11.5" font-weight="600">CUDA 2-pass · AAC-LC</text>
+  <text x="490" y="290" text-anchor="middle" fill="#94a3b8" font-size="10.5">Releases GPU before CPU finalize</text>
+  <text x="490" y="305" text-anchor="middle" fill="#94a3b8" font-size="10.5">Verified clock transport &amp; handoff</text>
+  <!-- Finish -->
+  <rect x="690" y="232" width="246" height="86" rx="9" fill="#0f172a" stroke="#34d399" stroke-width="1.8"/>
+  <text x="813" y="255" text-anchor="middle" fill="#f8fafc" font-size="13.5" font-weight="700">Media Pipeline Helper</text>
+  <text x="813" y="272" text-anchor="middle" fill="#6ee7b7" font-size="11.5" font-weight="600">phase = finish</text>
+  <text x="813" y="290" text-anchor="middle" fill="#94a3b8" font-size="10.5">HEVC NVENC/copy · SRT embed</text>
+  <text x="813" y="305" text-anchor="middle" fill="#94a3b8" font-size="10.5">Complete verify · publish · Arr notify</text>
+  <!-- Primary edges -->
+  <line x1="290" y1="275" x2="360" y2="275" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrow-cyan)"/>
+  <text x="325" y="267" text-anchor="middle" fill="#7dd3fc" font-size="10.5" font-weight="600">Out 1</text>
+  <line x1="614" y1="275" x2="684" y2="275" stroke="#34d399" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="649" y="267" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="600">Out 1/2</text>
+  <!-- Output 3 checkpoint resume bypass -->
+  <path d="M 210 318 L 210 350 L 760 350 L 760 324" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-dasharray="6 4" marker-end="url(#arrow-purple)"/>
+  <text x="485" y="344" text-anchor="middle" fill="#d8b4fe" font-size="10.5" font-weight="600">Out 3: verified finished checkpoint resume (skips re-normalize &amp; re-encode)</text>
+  <!-- Output 2 audited rejection -->
+  <path d="M 110 318 L 110 382 L 320 382" fill="none" stroke="#fb7185" stroke-width="1.8" marker-end="url(#arrow-rose)"/>
+  <text x="330" y="386" fill="#fda4af" font-size="11" font-weight="600">Out 2: confirmed rejection (size / unreadable / audio policy) → audited cleanup</text>
+</svg>

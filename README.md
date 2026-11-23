@@ -7,11 +7,12 @@
 > [!WARNING]
 > **USE AT YOUR OWN RISK · WIP** — *It might burn your house ;-)*
 
-A Tdarr FlowPlugin that moves FFmpeg `loudnorm`-style audio normalization onto CUDA GPUs while matching Tdarr's CPU-only `Normalize Audio` output **sample-for-sample (`100%` decoded parity)**.
+A Tdarr FlowPlugin that moves FFmpeg `loudnorm`-style audio normalization onto CUDA GPUs while matching Tdarr's CPU-only `Normalize Audio` output **sample-for-sample (`100%` decoded parity)** — plus an optional companion **Media Pipeline Helper** (`prepare` / `finish`) for full 3-node media integrity, HEVC encoding, subtitle handling, and Radarr/Sonarr publication.
 
 - **Exact CPU parity first:** Verified against Tdarr CPU `Normalize Audio` (`energy_similarity=1.000000000`, `rms_diff=0`) across long 5.1 + generated stereo jobs and codec smokes (AAC, MP3, AC3, E-AC-3, DTS, multi-audio).
 - **Fast on long media:** `4.5x`–`5.3x` faster than CPU (`24%`–`34%` faster than `1.2.8`) using streaming two-pass `gpuSourcePort` — no giant raw PCM temp files.
 - **Full stream preservation:** Normalizes selected audio streams (or all streams) while preserving video, subtitles, chapters, metadata, attachments, data streams, and zero-tolerance ISO MP4/MOV timing clocks.
+- **Standalone or 3-node pipeline:** Run **GPU Normalize Audio** on its own in any Tdarr Flow, or wrap it with **Media Pipeline Helper** (`prepare` → `GPU Normalize Audio` → `finish`) for admission, cleanup, HEVC video, original-relative integrity verification, and Arr handoff.
 
 ---
 
@@ -20,6 +21,8 @@ A Tdarr FlowPlugin that moves FFmpeg `loudnorm`-style audio normalization onto C
 Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.2.9`)** using a 5.1 source with no existing stereo track (combined workload = normalized original 5.1 + generated normalized 2-channel fallback, both verified against Tdarr CPU `Normalize Audio`).
 
 `Speed vs CPU` is measured `SRC_CPU / GPU` wall time: above `1.0x` is faster than CPU, below `1.0x` is slower. Short smoke clips are used for parity checks only and are excluded here.
+
+![GPU Normalize Audio Performance vs Tdarr CPU Reference](pictures/performance.svg)
 
 | Length | CPU Reference | GPU `1.2.9` | Speed vs CPU | vs `1.2.8` | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -48,9 +51,12 @@ Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.
 
 ---
 
-## Plugin UI
+## Flow Topologies
 
-<img width="1305" height="661" alt="GPU Normalize Audio Plugin UI" src="https://github.com/user-attachments/assets/4ff69be3-772a-4554-beef-93cda9dc7c06" />
+![Tdarr Flow Topologies: Standalone vs 3-Node Integrity Pipeline](pictures/pipeline-flow.svg)
+
+1. **Standalone Normalizer Flow:** Drop **GPU Normalize Audio** directly into any Tdarr Flow (for example before *Replace Original File*).
+2. **Full 3-Node Integrity Pipeline (Optional):** Wrap **GPU Normalize Audio** with **Media Pipeline Helper** (`phase = prepare` before audio, `phase = finish` after both audio outputs). Connect `prepare` **Output 3** directly to `finish` to resume verified checkpoints without re-normalizing or re-encoding.
 
 ---
 
@@ -76,6 +82,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
    FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.9/index.js
    ```
 3. In Tdarr WebUI click **Sync Plugins** (or restart Tdarr Server/Node) and select **GPU Normalize Audio** under **Local** Flow Plugins.
+4. *(Optional 3-Node Pipeline)* **Media Pipeline Helper** source lives in [`src/mediaPipelineHelper/`](src/mediaPipelineHelper/) (sharing runtime lock/mux primitives from `src/gpuNormalizeAudio/`) and installs under `FlowPlugins/LocalFlowPlugins/video/mediaPipelineHelper/<version>/` with entrypoint [`lib/mediaPipelineEntry.js`](src/mediaPipelineHelper/lib/mediaPipelineEntry.js).
 
 > [!TIP]
 > **Docker CUDA library path:** If CUDA loading fails with `libcuda.so.1: file too short` (or resolves the wrong driver library), set this on your Tdarr container:
@@ -85,23 +92,25 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 
 ---
 
-## Settings & Defaults
+## GPU Normalize Audio — UI & Settings
+
+![GPU Normalize Audio Plugin UI](pictures/gpu-normalize-audio-ui.svg)
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `Add Generated 2-Channel Track` | `true` | Adds normalized generated stereo track(s) according to the 2-channel scope. |
-| `Only Generate 2-Channel For First Language` | `true` | Generates stereo only for the first `Track Order` language (preferring 5.1 over 7.1). Disable to generate for every non-stereo stream/language. |
+| `Debug Logging` | `false` | Enables verbose FFmpeg/runtime logs for troubleshooting. |
 | `Track Order` | `eng, en` | Comma-separated language priority for track ordering and generated stereo selection (unlisted languages keep source order). |
 | `Normalize ONLY Languages` | `eng, en` | Comma-separated language filter. Clear or enter `all` / `*` to normalize every audio stream. |
 | `Remove Other Languages` | `false` | Off (default) copies audio streams outside `Normalize ONLY Languages` unchanged. Enable to delete unselected languages. |
 | `Fallback To Undetected Audio` | `true` | Keeps undetected-language (`und`) streams when no selected language exists instead of routing to Output 2. |
+| `Add Generated 2-Channel Track` | `true` | Adds normalized generated stereo track(s) according to the 2-channel scope. |
+| `Only Generate 2-Channel For First Language` | `true` | Generates stereo only for the first `Track Order` language (preferring 5.1 over 7.1). Disable to generate for every non-stereo stream/language. |
+| `Max Concurrent CPU Tasks` | `1` | Host-wide CPU concurrency limit across running jobs and plugins for muxing, copy-only runs, and verification (`0` disables the guard). |
+| `Max Concurrent GPU Tasks` | `1` | Host-wide GPU concurrency limit across running jobs and plugins (`0` disables the guard). |
 | `Audio Bitrate` | `192k` | Target AAC audio bitrate (release parity and speed are validated at `192k`). |
 | `Prepare Audio For MP4` | `false` | Converts retained MP4-incompatible audio codecs to AAC inside this plugin when a later flow step remuxes to MP4 (keeps container, video, and already-compatible audio unchanged). |
 | `Integrated Loudness I` / `LRA` / `TP` | `-18.0` / `7.0` / `-2.0` | Standard `loudnorm` loudness (LUFS), range (LU), and true-peak (dBTP) targets. |
 | `Max Gain dB` | `15` | Safety gate in dB: streams needing more gain than this are copied unchanged instead of normalized (`0` disables the gate). |
-| `Max Concurrent CPU Tasks` | `1` | Host-wide CPU concurrency limit across running jobs and plugins for muxing, copy-only runs, and verification (`0` disables the guard). |
-| `Max Concurrent GPU Tasks` | `1` | Host-wide GPU concurrency limit across running jobs and plugins (`0` disables the guard). |
-| `Debug Logging` | `false` | Enables verbose FFmpeg/runtime logs for troubleshooting. |
 
 **Flow Outputs:**
 - **Output 1:** Output file with normalized/copied audio, optional generated stereo, and preserved video/subtitles/chapters/metadata.
@@ -109,14 +118,64 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 
 ---
 
+## Media Pipeline Helper (Optional 3-Node Integrity Pipeline)
+
+[`src/mediaPipelineHelper/`](src/mediaPipelineHelper/) is an optional companion Tdarr FlowPlugin designed to wrap **GPU Normalize Audio** in a deterministic 3-node workflow:
+
+1. **Node 1 — `Media Pipeline Helper` (`phase = prepare`):**
+   - Validates original media admission (file-size bounds, stream/container readability, package ownership) and captures an immutable original-relative fingerprint.
+   - Removes unwanted audio/subtitle languages, commentary tracks, optional SDH subtitles, and unwanted subtitle codecs (such as bitmap PGS/VobSub) while extracting preserved text subtitles cleanly.
+   - Configures the shared host-wide **CPU & GPU concurrency limits** once on `prepare` — `finish` automatically inherits those limits via the signed handoff state.
+   - Detects verified finished checkpoints and routes them straight to **Output 3** (`prepare` → `finish`) so retries never re-normalize or re-encode.
+2. **Node 2 — `GPU Normalize Audio`:**
+   - Runs GPU-accelerated normalization and releases its GPU slot before CPU-bound final muxing so another job can use the GPU immediately.
+   - Connects **both Output 1 and Output 2** to Node 3 (`finish`).
+3. **Node 3 — `Media Pipeline Helper` (`phase = finish`):**
+   - Encodes non-HEVC video via NVENC (using a GPU slot only when encoding is needed) or stream-copies already-HEVC video losslessly.
+   - Embeds preserved and companion SRT subtitles (`mov_text` / text tracks), verifies full original-relative A/V/subtitle/timing/metadata integrity, and publishes atomically to the configured Completed Directory.
+   - Optionally notifies **Radarr** or **Sonarr** via API (`Arr Host` + node-local `Arr API Key`, never written into logs or continuation files) and records durable import receipts.
+
+![Media Pipeline Helper Plugin UI](pictures/media-pipeline-helper-ui.svg)
+
+| Setting | Phase | Default | Description |
+| --- | --- | --- | --- |
+| `Phase` | `prepare` / `finish` | `prepare` | Selects stage behavior (`prepare` before audio, `finish` after both audio outputs). |
+| `Minimum File Size (MB)` / `Maximum File Size (MB)` | `prepare` | `0` / `50000` | Inclusive original input size bounds in decimal MB (`0` disables a bound). Out-of-bounds files route to Output 2 with audited rejection evidence. |
+| `Keep Audio and Subtitle Languages` | `prepare` | `eng,und` | Comma-separated language codes retained during cleanup (audio normalization keeps its own explicit language selector in **GPU Normalize Audio**). |
+| `Remove Commentary Tracks` | `prepare` | `true` | Removes identified commentary audio and subtitle streams. |
+| `Remove SDH Subtitles` | `prepare` | `false` | Removes subtitles tagged as SDH (deaf and hard of hearing). |
+| `Subtitle Codecs to Remove` | `prepare` | `hdmv_pgs_subtitle,dvd_subtitle,dvb_subtitle,eia_608,timed_id3,pgs,vobsub` | Comma-separated subtitle codecs stripped during prepare (leave empty to keep all codecs). |
+| `Companion Subtitle Languages` | `finish` | `eng` | Comma-separated languages imported from companion `.srt` files. |
+| `Companion Subtitle Default Language` | `finish` | `eng` | Default language tag assigned to untagged companion `.srt` files. |
+| `Include Forced Companion Subtitles` | `finish` | `true` | Includes matching forced companion subtitles. |
+| `Include Untagged Companion Subtitles` | `finish` | `true` | Includes untagged companion subtitles using the configured default language. |
+| `HEVC Video Preset` / `HEVC Video Quality (QP)` | `finish` | `p5` / `25` | NVENC HEVC preset (`p1`–`p7`) and QP (`0`–`51`, lower = higher quality). Already-HEVC video is copied unchanged. |
+| `Max Concurrent CPU Tasks` | `prepare` (inherited) | `1` | Host-wide CPU concurrency limit across preparation, probes, copy muxing, verification, and publication (`0` disables). Hidden on `finish` because `finish` inherits `prepare`. |
+| `Max Concurrent GPU Tasks` | `prepare` (inherited) | `1` | Host-wide GPU concurrency limit shared with **GPU Normalize Audio** (`finish` acquires a GPU slot only for NVENC video encoding; `0` disables). Hidden on `finish` because `finish` inherits `prepare`. |
+| `Debug Logging` | `prepare` + `finish` | `false` | Enables full successful helper FFmpeg output in job logs. |
+| `FFprobe Executable` | `prepare` + `finish` | *(empty)* | Optional explicit `ffprobe` path; empty resolves `FFPROBE` or `ffprobe` from `PATH`. |
+| `Completed Directory` | `prepare` + `finish` | *(required)* | Shared completed output root configured identically on both helper nodes. |
+| `Decision and Publication State Directory` | `prepare` + `finish` | *(required)* | Shared persistent directory storing immutable identity, hash, decision, ACK, and cleanup evidence outside published packages. |
+| `Arr Application` / `Arr Host` / `Arr API Key` | `finish` | `radarr` / *(empty)* / *(empty)* | Optional Radarr/Sonarr API handoff (`Arr API Key` stays node-local and is never logged or written to handoff state). |
+| `Import Receipt Directory` | `finish` | *(empty)* | Persistent directory for normal import receipts recorded after publication. |
+
+**Flow Outputs:**
+- **Output 1:** `prepare`: verified prepared media for **GPU Normalize Audio**. `finish`: committed publication with separately recorded application-import outcome.
+- **Output 2:** Confirmed rejection with durable decision evidence, native downloader acknowledgment, and owned package/Tdarr cleanup.
+- **Output 3 (`prepare` only):** Verified finished checkpoint — connect directly to helper `finish` to skip re-normalization and re-encoding.
+
+---
+
 ## Architecture
 
-Active source lives in [`src/gpuNormalizeAudio/`](src/gpuNormalizeAudio/); immutable release snapshots live under [`FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/`](FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.9/) (older `<= 1.2.8` releases remain available via Git tags and GitHub Releases).
+Active source for both public plugins lives under [`src/`](src/); immutable normalizer release snapshots live under [`FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/`](FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.9/) (older `<= 1.2.8` releases remain available via Git tags and GitHub Releases).
 
-- **Tdarr Plugin & Planner (JS):** [`src/gpuNormalizeAudio/index.js`](src/gpuNormalizeAudio/index.js) & [`lib/`](src/gpuNormalizeAudio/lib/) — stream selection, language ordering, stereo fallback planning, GPU lock coordination, and direct clock final muxing.
+- **GPU Normalize Audio (JS):** [`src/gpuNormalizeAudio/index.js`](src/gpuNormalizeAudio/index.js) & [`lib/`](src/gpuNormalizeAudio/lib/) — stream selection, language ordering, stereo fallback planning, CPU/GPU lock coordination, and direct clock final muxing.
 - **Streaming Runtime & Native Helpers (Python / C):** [`src/gpuNormalizeAudio/runtime/bin/`](src/gpuNormalizeAudio/runtime/bin/) — streaming two-pass orchestration plus native C helpers (`audio_clock_mux`, `aac_encode_mt`, `opx_loudnorm_channel_stats`).
 - **CUDA Kernels (CUDA C/C++):** [`src/gpuNormalizeAudio/runtime/cuda/`](src/gpuNormalizeAudio/runtime/cuda/) — GPU ports of FFmpeg `af_loudnorm.c` EBU R128 loudness, true-peak, dynamic gain/limiter feedback, and exact SWR resampling.
-- **Parity Diagnostics & Gates:** [`diagnostics/`](diagnostics/) (sample-accurate `f32le` diff tools) and [`scripts/`](scripts/) (contract, manifest, and quality checks).
+- **Media Pipeline Helper (JS / Python):** [`src/mediaPipelineHelper/lib/mediaPipelineEntry.js`](src/mediaPipelineHelper/lib/mediaPipelineEntry.js), [`lib/`](src/mediaPipelineHelper/lib/), & [`runtime/`](src/mediaPipelineHelper/runtime/) — `prepare`/`finish` orchestration, original-relative A/V/subtitle/clock/metadata evidence verification, NVENC/HEVC handling, atomic publication, and Radarr/Sonarr handoff.
+- **Auto-Generated Visuals (`pictures/`):** [`scripts/generate_pictures.js`](scripts/generate_pictures.js) renders [`pictures/`](pictures/) deterministically from plugin metadata (`pluginDetails.js`, `mediaPipelineDetails.js`) and the `README.md` benchmark table. Pictures refresh automatically during release staging and are drift-checked by `./scripts/quality-check` (`node scripts/generate_pictures.js --check`).
+- **Parity Diagnostics & Quality Gates:** [`diagnostics/`](diagnostics/) (sample-accurate `f32le` diff tools) and [`scripts/`](scripts/) (contract, manifest, picture-sync, and quality checks).
 
 ---
 

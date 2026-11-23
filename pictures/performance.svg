@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="434" viewBox="0 0 980 434" role="img" aria-label="GPU Normalize Audio Performance vs Tdarr CPU Reference">
+  <style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }</style>
+  <rect width="980" height="434" rx="14" fill="#0b1120" stroke="#1e293b" stroke-width="1.5"/>
+  <text x="28" y="36" fill="#f8fafc" font-size="18" font-weight="700">GPU Normalize Audio v1.2.9 vs. Tdarr CPU Normalize Audio</text>
+  <text x="28" y="56" fill="#94a3b8" font-size="12">Combined 5.1 + generated 2ch wall time (lower is faster) · i9-9900K @ 5 GHz CPU vs. GTX 1050 Ti GPU · 100% exact decoded parity</text>
+  <rect x="28" y="68" width="12" height="10" rx="2" fill="#475569"/>
+  <text x="46" y="77" fill="#94a3b8" font-size="11">Tdarr CPU Reference</text>
+  <rect x="180" y="68" width="12" height="10" rx="2" fill="#10b981"/>
+  <text x="198" y="77" fill="#6ee7b7" font-size="11">GPU Normalize Audio v1.2.9</text>
+  <rect x="20" y="92" width="940" height="64" rx="8" fill="#111827" stroke="#1e293b"/>
+  <text x="38" y="129" fill="#f8fafc" font-size="15" font-weight="700">90 min</text>
+  <rect x="115" y="104" width="555" height="16" rx="4" fill="#475569"/>
+  <text x="678" y="116" fill="#94a3b8" font-size="11.5">CPU 2193.2s</text>
+  <rect x="115" y="126" width="105" height="18" rx="4" fill="#10b981"/>
+  <text x="228" y="139" fill="#6ee7b7" font-size="12" font-weight="700">GPU 416.9s</text>
+  <rect x="802" y="105" width="144" height="38" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1"/>
+  <text x="874" y="122" text-anchor="middle" fill="#a7f3d0" font-size="13.5" font-weight="700">5.260x vs CPU</text>
+  <text x="874" y="137" text-anchor="middle" fill="#6ee7b7" font-size="10.5">-34.1% vs prev · 100% parity</text>
+  <rect x="20" y="166" width="940" height="64" rx="8" fill="#111827" stroke="#1e293b"/>
+  <text x="38" y="203" fill="#f8fafc" font-size="15" font-weight="700">60 min</text>
+  <rect x="115" y="178" width="348" height="16" rx="4" fill="#475569"/>
+  <text x="471" y="190" fill="#94a3b8" font-size="11.5">CPU 1374.8s</text>
+  <rect x="115" y="200" width="77" height="18" rx="4" fill="#10b981"/>
+  <text x="200" y="213" fill="#6ee7b7" font-size="12" font-weight="700">GPU 303.5s</text>
+  <rect x="802" y="179" width="144" height="38" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1"/>
+  <text x="874" y="196" text-anchor="middle" fill="#a7f3d0" font-size="13.5" font-weight="700">4.529x vs CPU</text>
+  <text x="874" y="211" text-anchor="middle" fill="#6ee7b7" font-size="10.5">-24.0% vs prev · 100% parity</text>
+  <rect x="20" y="240" width="940" height="64" rx="8" fill="#111827" stroke="#1e293b"/>
+  <text x="38" y="277" fill="#f8fafc" font-size="15" font-weight="700">30 min</text>
+  <rect x="115" y="252" width="174" height="16" rx="4" fill="#475569"/>
+  <text x="297" y="264" fill="#94a3b8" font-size="11.5">CPU 688.7s</text>
+  <rect x="115" y="274" width="35" height="18" rx="4" fill="#10b981"/>
+  <text x="158" y="287" fill="#6ee7b7" font-size="12" font-weight="700">GPU 139.4s</text>
+  <rect x="802" y="253" width="144" height="38" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1"/>
+  <text x="874" y="270" text-anchor="middle" fill="#a7f3d0" font-size="13.5" font-weight="700">4.940x vs CPU</text>
+  <text x="874" y="285" text-anchor="middle" fill="#6ee7b7" font-size="10.5">-31.3% vs prev · 100% parity</text>
+  <rect x="20" y="314" width="940" height="64" rx="8" fill="#111827" stroke="#1e293b"/>
+  <text x="38" y="351" fill="#f8fafc" font-size="15" font-weight="700">10 min</text>
+  <rect x="115" y="326" width="67" height="16" rx="4" fill="#475569"/>
+  <text x="190" y="338" fill="#94a3b8" font-size="11.5">CPU 262.8s</text>
+  <rect x="115" y="348" width="13" height="18" rx="4" fill="#10b981"/>
+  <text x="136" y="361" fill="#6ee7b7" font-size="12" font-weight="700">GPU 51.5s</text>
+  <rect x="802" y="327" width="144" height="38" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="1"/>
+  <text x="874" y="344" text-anchor="middle" fill="#a7f3d0" font-size="13.5" font-weight="700">5.104x vs CPU</text>
+  <text x="874" y="359" text-anchor="middle" fill="#6ee7b7" font-size="10.5">-27.6% vs prev · 100% parity</text>
+  <text x="28" y="418" fill="#64748b" font-size="11">Auto-generated from README.md benchmark table &amp; plugin metadata via scripts/generate_pictures.js</text>
+</svg>
