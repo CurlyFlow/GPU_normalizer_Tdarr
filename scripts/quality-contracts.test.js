@@ -211,3 +211,50 @@ test("source size gate checks explicit files and rejects missing inputs", { skip
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("pictures UI manifest detects audio/helper UI schema, version, and PNG drift selectively", { skip: !fs.existsSync(sourceRoot) }, () => {
+  const {
+    REQUIRED_TDARR_SCREENSHOTS,
+    AUDIO_SCREENSHOTS,
+    HELPER_SCREENSHOTS,
+    inspectPicturesState,
+    writeUiManifest,
+  } = require("./generate_pictures");
+  const root = fs.mkdtempSync(path.join(repoRoot, "work/pictures-manifest-contract-"));
+  try {
+    fs.copyFileSync(path.join(repoRoot, "pictures/performance.svg"), path.join(root, "performance.svg"));
+    for (const name of REQUIRED_TDARR_SCREENSHOTS) {
+      fs.writeFileSync(path.join(root, name), Buffer.alloc(2048, name.charCodeAt(6)));
+    }
+    const baseUi = { releaseVersion: "1.2.10", audioUiSha256: "a".repeat(64), helperUiSha256: "b".repeat(64) };
+    writeUiManifest(null, { picturesDir: root, uiHashes: baseUi });
+
+    const clean = inspectPicturesState(null, { picturesDir: root, uiHashes: baseUi });
+    assert.equal(clean.screenshotsStale, false);
+    assert.deepEqual(clean.staleScreenshots, []);
+
+    const audioDrift = inspectPicturesState(null, {
+      picturesDir: root, uiHashes: { ...baseUi, audioUiSha256: "c".repeat(64) },
+    });
+    assert.equal(audioDrift.screenshotsStale, true);
+    assert.equal(audioDrift.audioUiChanged, true);
+    assert.equal(audioDrift.helperUiChanged, false);
+    assert.deepEqual(audioDrift.staleScreenshots, AUDIO_SCREENSHOTS);
+
+    const helperDrift = inspectPicturesState(null, {
+      picturesDir: root, uiHashes: { ...baseUi, helperUiSha256: "d".repeat(64) },
+    });
+    assert.equal(helperDrift.screenshotsStale, true);
+    assert.equal(helperDrift.audioUiChanged, false);
+    assert.equal(helperDrift.helperUiChanged, true);
+    assert.deepEqual(helperDrift.staleScreenshots, HELPER_SCREENSHOTS);
+
+    fs.writeFileSync(path.join(root, "tdarr-flow-standalone.png"), Buffer.alloc(2048, 0xff));
+    const pngDrift = inspectPicturesState(null, { picturesDir: root, uiHashes: baseUi });
+    assert.equal(pngDrift.screenshotsStale, true);
+    assert.deepEqual(pngDrift.modifiedScreenshots, ["tdarr-flow-standalone.png"]);
+    assert.deepEqual(pngDrift.staleScreenshots, ["tdarr-flow-standalone.png"]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
