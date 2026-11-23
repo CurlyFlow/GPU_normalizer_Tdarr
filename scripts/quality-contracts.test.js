@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { spawnSync } = require("node:child_process");
@@ -21,17 +22,19 @@ test("private operators, media evidence and docs stay outside public Git", () =>
 });
 
 test("release privacy scan does not skip binary artifacts", () => {
-  const temporary = fs.mkdtempSync(path.join(repoRoot, "work/privacy-contract-"));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "privacy-contract-"));
+  const options = {
+    cwd: repoRoot, encoding: "utf8", timeout: 10000,
+    env: { ...process.env, PRIVACY_ENV_FILE: path.join(temporary, ".env.fixture"), PRIVACY_EXTRA_TERMS: "" },
+  };
   try {
     const artifact = path.join(temporary, "fixture.so");
     fs.writeFileSync(artifact, Buffer.from("\0password=fixture-not-a-secret\0"));
-    const result = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary],
-      { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+    const result = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary], options);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stderr, /private-term scan failed/);
     fs.writeFileSync(artifact, Buffer.from("\0ordinary native payload\0"));
-    const clean = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary],
-      { cwd: repoRoot, encoding: "utf8", timeout: 10000 });
+    const clean = spawnSync("python3", ["scripts/release_snapshot_policy.py", "scan", temporary], options);
     assert.equal(clean.status, 0, clean.stdout + clean.stderr);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
@@ -39,7 +42,7 @@ test("release privacy scan does not skip binary artifacts", () => {
 });
 
 test("release privacy scan blocks full release names and redacts local env terms", () => {
-  const temporary = fs.mkdtempSync(path.join(repoRoot, "work/privacy-env-contract-"));
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "privacy-env-contract-"));
   const scanDir = path.join(temporary, "payload");
   const envFile = path.join(temporary, ".env.fixture");
   const payload = path.join(scanDir, "sample.txt");
@@ -158,7 +161,7 @@ test("installed Python runtime does not create updater-blocking bytecode", { ski
 });
 
 test("dependency owner rules reject reverse imports but allow shared policy", { skip: !fs.existsSync(sourceRoot) }, () => {
-  const root = fs.mkdtempSync(path.join(repoRoot, "work/ownership-contract-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "ownership-contract-"));
   const lib = path.join(root, "src/gpuNormalizeAudio/lib");
   fs.mkdirSync(lib, { recursive: true });
   const cases = [
@@ -191,7 +194,7 @@ test("dependency owner rules reject reverse imports but allow shared policy", { 
 });
 
 test("source size gate checks explicit files and rejects missing inputs", { skip: !fs.existsSync(sourceRoot) }, () => {
-  const root = fs.mkdtempSync(path.join(repoRoot, "work/source-size-contract-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "source-size-contract-"));
   const file = path.join(root, "fixture.mjs");
   const run = (...inputs) => spawnSync("python3", [path.join(repoRoot, "scripts/source-quality.py"), ...inputs], {
     cwd: repoRoot, encoding: "utf8", timeout: 15000,
@@ -220,7 +223,7 @@ test("pictures UI manifest detects audio/helper UI schema, version, and PNG drif
     inspectPicturesState,
     writeUiManifest,
   } = require("./generate_pictures");
-  const root = fs.mkdtempSync(path.join(repoRoot, "work/pictures-manifest-contract-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pictures-manifest-contract-"));
   try {
     fs.copyFileSync(path.join(repoRoot, "pictures/performance.svg"), path.join(root, "performance.svg"));
     for (const name of REQUIRED_TDARR_SCREENSHOTS) {
