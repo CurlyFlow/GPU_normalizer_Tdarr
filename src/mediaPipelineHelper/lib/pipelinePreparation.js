@@ -5,7 +5,12 @@ const path = require("node:path");
 const { recoverInput } = require("./pipelineInputRecovery");
 const { bindPreparationMap } = require("./pipelinePreparationMap");
 const { bindSubtitleExtractions } = require("./pipelineSubtitleEvidence");
-const { pushChapterCarrierExclusions, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
+const {
+  MP4_CONVERTIBLE_SUBTITLE_CODECS,
+  pushChapterCarrierExclusions,
+  pushMp4ConvertibleSubtitleArgs,
+  pushMp4MetadataTagsArgs,
+} = require("./outputAudioSpecs");
 const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
 const { canonicalMp4Language } = require("./mediaMetadataEvidence");
 
@@ -29,17 +34,20 @@ function extractionTarget(original, stream) {
 
 const MP4_COPYABLE_VIDEO = new Set(["hevc", "h264", "mpeg4", "av1", "vp9", "mpeg2video"]);
 const MP4_COPYABLE_AUDIO = new Set(["aac", "ac3", "eac3", "dts", "mp3", "flac", "opus", "truehd"]);
-const MP4_STRICT_AUDIO = new Set(["truehd", "opus", "flac"]);
-const MP4_CONVERTIBLE_SUBS = new Set(["subrip", "ass"]);
 const MP4_COPYABLE_SUBS = new Set(["mov_text", "dvd_subtitle"]);
 
 function canPromoteMkvToMp4(file, retained) {
   if (String(file.container || "").toLowerCase() !== "mkv") return false;
   return retained.every(stream => {
     if (stream.codec_type === "video") return MP4_COPYABLE_VIDEO.has(stream.codec_name);
-    if (stream.codec_type === "audio") return MP4_COPYABLE_AUDIO.has(stream.codec_name);
+    if (stream.codec_type === "audio") {
+      // FFmpeg movenc.c drops Matroska CodecDelay (negative start_pts) on non-AAC audio
+      // during MKV->MP4 copy; keep MKV through prepare so audio normalization preserves timing.
+      if (stream.codec_name !== "aac" && Number(stream.start_pts) < 0) return false;
+      return MP4_COPYABLE_AUDIO.has(stream.codec_name);
+    }
     if (stream.codec_type === "subtitle") {
-      return MP4_COPYABLE_SUBS.has(stream.codec_name) || MP4_CONVERTIBLE_SUBS.has(stream.codec_name);
+      return MP4_COPYABLE_SUBS.has(stream.codec_name) || MP4_CONVERTIBLE_SUBTITLE_CODECS.has(stream.codec_name);
     }
     return false;
   });
@@ -95,14 +103,9 @@ function planPreparation(file, original, settings, exists = fs.existsSync) {
       if (stream.codec_name === "hevc") outputs.push(`-tag:v:${videoOrdinal}`, "hvc1");
       videoOrdinal += 1;
     }
-    if (retained.some(stream => stream.codec_type === "subtitle" && MP4_CONVERTIBLE_SUBS.has(stream.codec_name))) {
-      outputs.push("-c:s", "mov_text");
-    }
+    pushMp4ConvertibleSubtitleArgs(outputs, retained);
     const videoScale = sourceVideoTimescale(retained);
     if (videoScale) outputs.push("-video_track_timescale", videoScale);
-    if (retained.some(stream => stream.codec_type === "audio" && MP4_STRICT_AUDIO.has(stream.codec_name))) {
-      outputs.push("-strict", "-2");
-    }
     retained.forEach((stream, outputIndex) => {
       const rawLang = stream.tags?.language;
       if (typeof rawLang !== "string" || !rawLang.trim()) return;

@@ -7,11 +7,18 @@ const { fileDigest } = require("./mediaEvidenceFiles");
 const { validateReceipt } = require("./mediaClockProtocol");
 const { inspectMedia } = require("./mediaSourceProbe");
 
-function streams(file) {
+function hasValidStreamCodec(stream) {
+  if (typeof stream.codec_name === "string" && stream.codec_name.length > 0) return true;
+  // FFprobe omits codec_name on Matroska attachments/data with AV_CODEC_ID_NONE (e.g. .nfo).
+  return ["attachment", "data"].includes(stream.codec_type) && stream.codec_name === undefined;
+}
+
+function streams(file, requireCodecName = false) {
   const values = file.ffProbeData?.streams;
   if (!Array.isArray(values) || !values.length || values.length > 256
       || values.some(stream => !Number.isSafeInteger(stream.index) || stream.index < 0
-        || typeof stream.codec_type !== "string" || typeof stream.codec_name !== "string")
+        || typeof stream.codec_type !== "string"
+        || (requireCodecName ? (typeof stream.codec_name !== "string" || !stream.codec_name.length) : !hasValidStreamCodec(stream)))
       || values.some((stream, index) => index > 0 && stream.index <= values[index - 1].index)
       || new Set(values.map(stream => stream.index)).size !== values.length) {
     throw Error("Preparation requires an exact, unambiguous stream inventory");
@@ -26,8 +33,8 @@ function language(stream, promotedMkv = false) {
 }
 
 function bindPreparationMap(source, prepared, retainedIndices, originalId) {
-  const before = streams(source);
-  const after = streams(prepared);
+  const before = streams(source, false);
+  const after = streams(prepared, true);
   if (after.some((stream, index) => stream.index !== index)) {
     throw Error("Prepared stream indices are not canonical");
   }
@@ -51,6 +58,9 @@ function bindPreparationMap(source, prepared, retainedIndices, originalId) {
   if (selected.length !== comparableAfter.length) throw Error("Prepared stream count differs from its explicit selection");
   const mapping = selected.map((stream, index) => {
     const actual = comparableAfter[index];
+    if (typeof stream.codec_name !== "string" || !stream.codec_name.length) {
+      throw Error("Preparation requires an exact, unambiguous stream inventory");
+    }
     const promotedSub = promotedMkv && stream.codec_type === "subtitle"
       && ["subrip", "ass"].includes(stream.codec_name) && actual.codec_name === "mov_text";
     if (actual.codec_type !== stream.codec_type || (!promotedSub && actual.codec_name !== stream.codec_name)

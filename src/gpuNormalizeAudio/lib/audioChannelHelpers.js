@@ -17,10 +17,6 @@ function sourceChannelLayout(stream, channels) {
   return raw;
 }
 
-function isTrueHdStream(stream) {
-  return String((stream || {}).codec_name || (stream || {}).codec || "").toLowerCase() === "truehd";
-}
-
 function isMp4Container(container) {
   return new Set(["mp4", "m4v"]).has(String(container || "").trim().toLowerCase());
 }
@@ -34,11 +30,6 @@ function shouldEncodeCopiedAudioForMp4(container, stream) {
   if (!isMp4Container(container)) return false;
   const codec = String((stream || {}).codec_name || (stream || {}).codec || "").toLowerCase();
   return !new Set(["aac", "alac", "mp3", "mp4a"]).has(codec);
-}
-
-function mp4TrueHdOutputArgs(container, copiedStreams) {
-  if (!isMp4Container(container)) return [];
-  return (copiedStreams || []).some(isTrueHdStream) ? ["-strict", "-2"] : [];
 }
 
 function channelCount(value, primaryAudioStream, fallback) {
@@ -63,7 +54,6 @@ module.exports = {
   channelCount,
   isMp4Container,
   isRegeneratedChapterCarrier,
-  mp4TrueHdOutputArgs,
   primaryAudioChannels,
   shouldEncodeCopiedAudioForMp4,
   sourceChannelLayout,

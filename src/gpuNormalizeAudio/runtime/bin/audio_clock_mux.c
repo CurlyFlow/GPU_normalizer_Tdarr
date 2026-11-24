@@ -222,8 +222,10 @@ int main(int argc, char **argv)
         if (track->stream < 0) { result = AVERROR(EINVAL); goto done; }
         if (clock_requires_fragments(track)) fragmented = 1;
     }
-    if ((result = avformat_alloc_output_context2(&output, NULL, clock_mux_format(input), NULL)) < 0) goto done;
+    const char *mux_format = clock_mux_format(input);
+    if ((result = avformat_alloc_output_context2(&output, NULL, mux_format, NULL)) < 0) goto done;
     if (!output) { result = AVERROR(ENOMEM); goto done; }
+    if (!strcmp(mux_format, "mp4")) output->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
     if ((result = copy_clock_structure(output, input)) < 0) goto done;
     output->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED; output->flags |= AVFMT_FLAG_CUSTOM_IO;
     target.fd = open(argv[2], O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
@@ -252,7 +254,7 @@ int main(int argc, char **argv)
     packet = av_packet_alloc();
     if (!packet) { result = AVERROR(ENOMEM); goto done; }
     while ((result = av_read_frame(input, packet)) >= 0) {
-        if (++packets > 10000000 || packet->stream_index < 0 || (unsigned)packet->stream_index >= input->nb_streams) {
+        if (++packets > 100000000 || packet->stream_index < 0 || (unsigned)packet->stream_index >= input->nb_streams) {
             result = AVERROR(EINVAL); goto done;
         }
         int index = packet->stream_index;

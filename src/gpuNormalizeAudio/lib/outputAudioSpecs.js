@@ -2,9 +2,10 @@
 
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { isMp4Container, isRegeneratedChapterCarrier, mp4TrueHdOutputArgs, shouldEncodeCopiedAudioForMp4 } = require("./audioChannelHelpers");
+const { isMp4Container, isRegeneratedChapterCarrier, shouldEncodeCopiedAudioForMp4 } = require("./audioChannelHelpers");
 
 const MOVIE_CONTAINERS = new Set(["mp4", "m4v", "mov", "m4a", "ipod"]);
+const MP4_CONVERTIBLE_SUBTITLE_CODECS = new Set(["subrip", "ass"]);
 const MAX_MOVIE_SCALE = 2147483647n;
 function clockGcd(a, b) { while (b) [a, b] = [b, a % b]; return a; }
 function isMovieContainer(container) { return MOVIE_CONTAINERS.has(container); }
@@ -58,10 +59,9 @@ function directMuxInputFormatForPlan(plan) {
 function pushAudioCodec(args, audioIdx, { container, stream, audioBitrate }) {
   if (shouldEncodeCopiedAudioForMp4(container, stream)) {
     pushAacEncodeArgs(args, audioIdx, audioBitrate);
-    return false;
+    return;
   }
   args.push(`-c:a:${audioIdx}`, "copy");
-  return true;
 }
 
 function sourceAudioSpec(plan, audioStreams) {
@@ -151,7 +151,6 @@ function pushOutputAudioCodecs(args, audioSpecs, {
   encodeSampleRateArgsFor = null,
   encodeThreadArgs = null,
 }) {
-  const copiedTrueHdStreams = [];
   audioSpecs.forEach((spec, audioIdx) => {
     if (spec.kind === "normalizedFile") {
       args.push(`-c:a:${audioIdx}`, "copy");
@@ -169,15 +168,12 @@ function pushOutputAudioCodecs(args, audioSpecs, {
       if (codecThreadArgs[0] === "-threads" && codecThreadArgs[1]) args.push(`-threads:a:${audioIdx}`, codecThreadArgs[1]);
       return;
     }
-    if (pushAudioCodec(args, audioIdx, {
+    pushAudioCodec(args, audioIdx, {
       container,
       stream: spec.stream,
       audioBitrate,
-    })) {
-      copiedTrueHdStreams.push(spec.stream);
-    }
+    });
   });
-  return copiedTrueHdStreams;
 }
 
 function pushOutputAudioMetadata(args, audioSpecs, inputStreams) {
@@ -204,13 +200,30 @@ function pushOutputAudioMetadata(args, audioSpecs, inputStreams) {
 }
 
 function pushMp4MetadataTagsArgs(args, container) {
-  if (isMovieContainer(String(container || "").toLowerCase())) {
+  const normalized = String(container || "").toLowerCase();
+  if (isMovieContainer(normalized)) {
     args.push("-movflags", "+use_metadata_tags");
+  }
+  // FFmpeg movenc.c requires strict_std_compliance <= FF_COMPLIANCE_UNOFFICIAL (-1)
+  // for Dolby Vision (dvcC/dvvC/dvwC), Stereo3D and Spherical boxes in MP4,
+  // and <= FF_COMPLIANCE_EXPERIMENTAL (-2) for TrueHD in MP4.
+  if (isMp4Container(normalized)) {
+    args.push("-strict", "-2");
   }
 }
 
-function pushMp4TrueHdOutputArgs(args, container, copiedTrueHdStreams) {
-  args.push(...mp4TrueHdOutputArgs(container, copiedTrueHdStreams));
+function pushMp4ConvertibleSubtitleArgs(args, streams) {
+  let subtitleCount = 0;
+  for (const stream of streams) {
+    if (stream.codec_type !== "subtitle") continue;
+    if (MP4_CONVERTIBLE_SUBTITLE_CODECS.has(stream.codec_name)) {
+      // 1/1000s matches Matroska/SRT precision and avoids FFmpeg's default 1/1000000s
+      // mov_text timescale overflowing 32-bit MP4 stts sample_delta at 35m47s.
+      args.push(`-c:s:${subtitleCount}`, "mov_text", `-time_base:s:${subtitleCount}`, "1/1000");
+    }
+    subtitleCount += 1;
+  }
+  return subtitleCount;
 }
 
 function pushPreservedVideoTimescaleArgs(args, container, inputStreams = []) {
@@ -223,6 +236,7 @@ function pushPreservedVideoTimescaleArgs(args, container, inputStreams = []) {
 
 module.exports = {
   AAC_MOVIE_TIMESCALE,
+  MP4_CONVERTIBLE_SUBTITLE_CODECS,
   exactMovieTimescale,
   isMovieContainer,
   movieClockDenominator,
@@ -237,8 +251,8 @@ module.exports = {
   pushBasePackageMaps,
   pushChapterCarrierExclusions,
   pushContainerCopyCodecs,
+  pushMp4ConvertibleSubtitleArgs,
   pushMp4MetadataTagsArgs,
-  pushMp4TrueHdOutputArgs,
   pushPreservedVideoTimescaleArgs,
   pushOutputAudioCodecs,
   pushOutputAudioMetadata,

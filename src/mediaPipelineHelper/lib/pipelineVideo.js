@@ -2,7 +2,8 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pushChapterCarrierExclusions, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
+const { pushChapterCarrierExclusions, pushMp4ConvertibleSubtitleArgs, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
+const { movieHeaderTimescale } = require("./movieTimescale");
 
 function canonicalLanguage(value) {
   const language = String(value || "").toLowerCase();
@@ -41,7 +42,7 @@ function selectedVideoSidecars(original, settings, preparation) {
   return selectedSidecars(original, settings).filter(sidecar => !extracted.has(sidecar.file));
 }
 
-function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", outputArgs: [] }) {
+function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", outputArgs: [] }, movieTimescale = null) {
   const streams = file.ffProbeData.streams;
   const inputs = ["-i", file._id, ...sidecars.flatMap((s) => ["-sub_charenc", "UTF-8", "-f", "srt", "-i", s.file])];
   const outputs = ["-map", "0", "-map_metadata", "0", "-map_chapters", "0", "-c", "copy"];
@@ -59,19 +60,27 @@ function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", 
     videoIndex += 1;
   }
   if (matroskaVideoClock) outputs.push("-video_track_timescale", "1000");
+  const retainedSubCount = pushMp4ConvertibleSubtitleArgs(outputs, streams);
   if (sidecars.length) {
-    const retained = streams.filter(stream => stream.codec_type === "subtitle").length;
     sidecars.forEach((sidecar, index) => {
-      const outputIndex = retained + index;
-      outputs.push("-map", `${index + 1}:0`, `-metadata:s:s:${outputIndex}`, `language=${sidecar.language}`,
+      const outputIndex = retainedSubCount + index;
+      outputs.push("-map", `${index + 1}:0`, `-c:s:${outputIndex}`, "mov_text",
+        `-time_base:s:${outputIndex}`, "1/1000",
+        `-metadata:s:s:${outputIndex}`, `language=${sidecar.language}`,
         `-metadata:s:s:${outputIndex}`, `title=${sidecar.language}${sidecar.forced ? " forced" : ""}`,
         `-disposition:s:${outputIndex}`, sidecar.forced ? "forced" : "0");
     });
   }
-  if (sidecars.length || streams.some((s) => s.codec_type === "subtitle")) outputs.push("-c:s", "mov_text");
-  outputs.push("-ignore_unknown", "-max_muxing_queue_size", "99999", "-strict", "-2");
+  outputs.push("-ignore_unknown", "-max_muxing_queue_size", "99999");
   pushMp4MetadataTagsArgs(outputs, "mp4");
+  if (movieTimescale !== null && movieTimescale > 0n && movieTimescale <= 2147483647n) {
+    outputs.push("-movie_timescale", String(movieTimescale));
+  }
   return { inputs, outputs, container: "mp4", label: "Preparing final video container and subtitle tracks" };
+}
+
+function preservedMovieTimescale(file) {
+  try { return movieHeaderTimescale(file); } catch { return null; }
 }
 
 async function processVideo(args, settings, runtime, runPhase) {
@@ -80,7 +89,8 @@ async function processVideo(args, settings, runtime, runPhase) {
   const convert = args.inputFileObj.ffProbeData.streams.some((s) => s.codec_type === "video" && s.codec_name !== "hevc");
   const encoder = convert ? await runtime.encoder(args) : undefined;
   const executeVerified = async (working, companions, selectedEncoder, resource) => await runPhase(resource, async () => {
-    const result = await runtime.execute(working, planVideo(working.inputFileObj, settings, companions, selectedEncoder));
+    const scale = preservedMovieTimescale(working.inputFileObj._id);
+    const result = await runtime.execute(working, planVideo(working.inputFileObj, settings, companions, selectedEncoder, scale));
     return await runtime.verifyVideo(working, result, settings, companions, selectedEncoder);
   });
   const finished = await executeVerified(args, [], encoder, convert ? "gpu" : "cpu");

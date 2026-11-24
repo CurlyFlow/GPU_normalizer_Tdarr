@@ -138,6 +138,21 @@ function equivalentMovTextExtradata(sourceFile, sourceStreamIndex, candidateFile
   return Boolean(before && after && Buffer.compare(before, after) === 0);
 }
 
+function movTextShiftOptions(sourceFile, sourceStream, candidateFile, candidateStream, ffprobePath) {
+  const srcType = sourceStream?.codec_type || sourceStream?.type;
+  const candType = candidateStream?.codec_type || candidateStream?.type;
+  if (srcType !== "subtitle" || candType !== "subtitle"
+      || sourceStream?.codec_name !== "mov_text" || candidateStream?.codec_name !== "mov_text") {
+    return {};
+  }
+  return {
+    allowEquivalentExtradata: () => equivalentMovTextExtradata(
+      sourceFile, sourceStream.index, candidateFile, candidateStream.index, ffprobePath,
+    ),
+    allowZeroDurationMovTextEnd: true,
+  };
+}
+
 function normalizeHvccCompleteness(raw) {
   if (!raw || raw.length < 23 || raw[0] !== 1) return null;
   const copy = Buffer.from(raw);
@@ -277,4 +292,4 @@ function verifyClockFiles(spec) {
 }
 
 module.exports = { verifyClockFiles, verifyVideoClocks, verifyMappedAudioClocks, createEvidenceCache, prewarmClockEvidence,
-  equivalentMovTextExtradata, stripMovTextBtrt };
+  equivalentMovTextExtradata, movTextShiftOptions, stripMovTextBtrt };

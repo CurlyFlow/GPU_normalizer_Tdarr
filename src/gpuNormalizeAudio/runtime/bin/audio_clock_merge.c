@@ -151,7 +151,7 @@ static int next_merge_packet(MergeInput *input, AVFormatContext *output, ClockTr
     int result;
     while ((result = av_read_frame(input->format, input->packet)) >= 0) {
         AVPacket *packet = input->packet;
-        if (++input->packets > 10000000 || packet->stream_index < 0
+        if (++input->packets > 100000000 || packet->stream_index < 0
             || (unsigned)packet->stream_index >= input->format->nb_streams) return AVERROR(EINVAL);
         int mapped = input->map[packet->stream_index];
         if (mapped < 0) { av_packet_unref(packet); continue; }
@@ -203,8 +203,10 @@ static int run_merge_or_mux(char **arguments, int retime_audio)
         || plan_before.st_uid != getuid() || (plan_before.st_mode & 077) || plan_before.st_size < 1
         || plan_before.st_size > 8 * 1024 * 1024 || load_clock_plan(plan_fd, &plan)) goto done;
     if ((result = open_merge_input(&audio, arguments[0])) < 0 || (result = open_merge_input(&video, arguments[1])) < 0) goto done;
-    if ((result = avformat_alloc_output_context2(&output, NULL, clock_mux_format(video.format), NULL)) < 0) goto done;
+    const char *mux_format = clock_mux_format(video.format);
+    if ((result = avformat_alloc_output_context2(&output, NULL, mux_format, NULL)) < 0) goto done;
     if (!output) { result = AVERROR(ENOMEM); goto done; }
+    if (!strcmp(mux_format, "mp4")) output->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
     result = retime_audio
         ? mux_structure(&audio, &video, output, &plan, tracks)
         : merge_structure(&audio, &video, output, &plan, tracks);

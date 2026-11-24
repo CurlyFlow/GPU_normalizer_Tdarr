@@ -2,6 +2,8 @@
 
 const { requirePreparationMap, preparationVideoMap, requirePreparationEvidence } = require("./pipelinePreparationMap");
 const { verifyClockInWorker } = require("./mediaClockWorker");
+const { inspectMedia } = require("./mediaSourceProbe");
+const { verifyPreparedMediaCarriers } = require("./mediaMetadataEvidence");
 const { mediaTools } = require("./mediaTools");
 
 async function verifyPreparationEvidence(args, directory) {
@@ -20,7 +22,14 @@ async function verifyPreparationEvidence(args, directory) {
     { onProgress: () => args.jobLog("Preparation verification is still running; original remains unchanged.") });
     args.variables = { ...args.variables, mediaPipelinePreparationEvidence: receipt };
     if (receipt.status !== "pass") throw Error(`Preparation verification held: ${receipt.errors.slice(0, 3).join("; ")}`);
-    return requirePreparationEvidence(args, { originalId: mapping.originalId, preparedId: mapping.preparedId });
+    const validated = requirePreparationEvidence(args, { originalId: mapping.originalId, preparedId: mapping.preparedId });
+    verifyPreparedMediaCarriers(
+      inspectMedia(mapping.originalId, tools.ffprobe),
+      inspectMedia(mapping.preparedId, tools.ffprobe),
+      mapping.streams,
+      validated.common_offset,
+    );
+    return validated;
   } catch (error) {
     error.code = "MEDIA_PREPARATION_HELD";
     error.preserveMediaEvidence = true;

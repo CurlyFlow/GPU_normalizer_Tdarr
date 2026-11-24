@@ -6,19 +6,23 @@ const { withMovie } = require("./mediaMovieFile");
 const { audioPresentation } = require("./mediaAudioWindow");
 const { isMovieContainer, exactMovieTimescale, movieClockDenominator } = require("./outputAudioSpecs");
 
+function movieHeaderTimescale(file) {
+  if (!isMovieContainer(path.extname(String(file || "")).slice(1).toLowerCase())) return null;
+  return withMovie(file, (reader, top) => {
+    const header = reader.one(reader.children(reader.one(top, "moov")), "mvhd");
+    const { version } = reader.full(header);
+    assert.ok(version === 0 || version === 1, "Unsupported original movie clock version");
+    return reader.read(header, header.start + (version ? 20 : 12), 4);
+  });
+}
+
 // Called only after private outputs exist, never during audio planning.
 function finalMuxMovieTimescale({ inputFile, inputStreams, audioSpecs, outputFile }) {
   if (!isMovieContainer(path.extname(outputFile).slice(1).toLowerCase())) return null;
   assert.ok(inputStreams.length <= 256 && audioSpecs.length <= 128);
   const denominators = [1];
-  if (isMovieContainer(path.extname(inputFile).slice(1).toLowerCase())) {
-    denominators.push(withMovie(inputFile, (reader, top) => {
-      const header = reader.one(reader.children(reader.one(top, "moov")), "mvhd");
-      const { version } = reader.full(header);
-      assert.ok(version === 0 || version === 1, "Unsupported original movie clock version");
-      return reader.read(header, header.start + (version ? 20 : 12), 4);
-    }));
-  }
+  const headerScale = movieHeaderTimescale(inputFile);
+  if (headerScale !== null) denominators.push(headerScale);
   const copiedAudio = new Set(audioSpecs.filter(spec => spec.kind === "source").map(spec => spec.stream.index));
   for (const stream of inputStreams) {
     const type = stream.codec_type || stream.type;
@@ -44,4 +48,4 @@ function finalMuxMovieTimescale({ inputFile, inputStreams, audioSpecs, outputFil
   return exactMovieTimescale(denominators);
 }
 
-module.exports = { finalMuxMovieTimescale };
+module.exports = { finalMuxMovieTimescale, movieHeaderTimescale };

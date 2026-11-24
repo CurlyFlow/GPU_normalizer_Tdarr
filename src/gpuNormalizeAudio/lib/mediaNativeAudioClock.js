@@ -4,8 +4,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
+const { StringDecoder } = require("node:string_decoder");
 const { readEvidenceLines } = require("./mediaEvidenceFiles");
-const { decodedAudioTimeline } = require("./mediaClockEvidence");
+const { createAudioTimelineAccumulator } = require("./mediaClockEvidence");
 const { unexpectedMediaDiagnostics } = require("./mediaSourceProbe");
 
 const STREAM_FIELDS = ["index", "codec_type", "sample_rate", "channels", "time_base"];
@@ -38,51 +39,87 @@ function nativeInteger(value, positive = false) {
   return number;
 }
 
-function nativeAudioTimeline(metadata, lines, expected, overrideTick = null) {
-  const base = metadata.time_base.match(/^([1-9]\d{0,18})\/([1-9]\d{0,18})$/);
-  assert.ok(base && metadata.codec_type === "audio", "Invalid native audio time base or type");
+function validateStreamIdentity(metadata, expected) {
+  assert.equal(metadata.codec_type, "audio", "Invalid native audio time base or type");
   for (const [key, observed] of [["sample_rate", expected.sample_rate], ["index", expected.index]]) {
     assert.equal(nativeInteger(metadata[key], key !== "index"), BigInt(observed), "Native audio stream identity changed");
   }
-  const expectedChannels = BigInt(expected.channels);
-  const terminalChannels = nativeInteger(metadata.channels, true);
-  const rate = Number(metadata.sample_rate);
+}
+
+function createAudioTimelineParser(expected, overrideTick = null, knownMetadata = null) {
+  const source = knownMetadata || expected;
+  const base = String(source?.time_base || "").match(/^([1-9]\d{0,18})\/([1-9]\d{0,18})$/);
+  if (!knownMetadata) {
+    if (!base) return null;
+  } else {
+    assert.ok(base && knownMetadata.codec_type === "audio", "Invalid native audio time base or type");
+    validateStreamIdentity(knownMetadata, expected);
+  }
+  const baseNum = nativeInteger(base[1], true);
+  const baseDen = nativeInteger(base[2], true);
+  const rate = Number(source.sample_rate);
   assert.ok(Number.isSafeInteger(rate) && rate > 0, "Invalid native audio rate");
-  function* frames() {
-    let streams = 0;
-    let firstFrameChannels = null;
-    let lastFrameChannels = null;
-    for (const raw of lines) {
+  const expectedIndex = knownMetadata ? knownMetadata.index : String(expected.index);
+  const expectedChannels = BigInt(expected.channels);
+  const knownTerminalChannels = knownMetadata ? nativeInteger(knownMetadata.channels, true) : null;
+  const tick = overrideTick || { numerator: baseNum, denominator: baseDen };
+  const accumulator = createAudioTimelineAccumulator(rate, tick);
+  let streams = 0;
+  let metadata = knownMetadata;
+  let firstFrameChannels = null;
+  let lastFrameChannels = null;
+  let sawNonExpectedChannels = false;
+  return {
+    pushLine(raw) {
       const line = clockLine(raw);
-      if (line === null) continue;
+      if (line === null) return;
       if (line.startsWith("stream|")) {
         assert.equal(++streams, 1, "Duplicate native audio stream evidence");
-        assert.deepEqual(compactRow(line, "stream", STREAM_FIELDS), metadata);
-        continue;
+        const row = compactRow(line, "stream", STREAM_FIELDS);
+        if (knownMetadata) {
+          assert.deepEqual(row, knownMetadata);
+        } else {
+          assert.equal(row.time_base, expected.time_base, "Native audio time base changed");
+          validateStreamIdentity(row, expected);
+          metadata = row;
+        }
+        return;
       }
       assert.equal(streams, 0, "Native frames followed terminal stream metadata");
       const frame = compactRow(line, "frame", FRAME_FIELDS);
       assert.equal(frame.media_type, "audio");
-      assert.equal(frame.stream_index, metadata.index, "Unexpected decoded audio stream");
+      assert.equal(frame.stream_index, expectedIndex, "Unexpected decoded audio stream");
       const frameChannels = nativeInteger(frame.channels, true);
       if (firstFrameChannels === null) {
         firstFrameChannels = frameChannels;
         assert.equal(firstFrameChannels, expectedChannels, "Native audio stream identity changed");
-      }
-      if (terminalChannels === expectedChannels) {
-        assert.equal(frameChannels, expectedChannels, "Decoded audio channel count changed");
+      } else if (frameChannels !== expectedChannels) {
+        if (knownTerminalChannels === expectedChannels) {
+          assert.equal(frameChannels, expectedChannels, "Decoded audio channel count changed");
+        }
+        sawNonExpectedChannels = true;
       }
       lastFrameChannels = frameChannels;
       const samples = nativeInteger(frame.nb_samples, true);
       assert.ok(samples <= 2147483647n, "Invalid AVFrame sample count");
-      yield { start: { numerator: nativeInteger(frame.pts) * nativeInteger(base[1], true),
-        denominator: nativeInteger(base[2], true) }, frameSamples: samples };
-    }
-    assert.equal(streams, 1, "Missing native audio stream metadata");
-    assert.equal(lastFrameChannels, terminalChannels, "Native audio stream identity changed");
-  }
-  const tick = overrideTick || { numerator: nativeInteger(base[1], true), denominator: nativeInteger(base[2], true) };
-  return decodedAudioTimeline(frames(), rate, tick);
+      accumulator.push({ start: { numerator: nativeInteger(frame.pts) * baseNum, denominator: baseDen }, frameSamples: samples });
+    },
+    finish() {
+      assert.equal(streams, 1, "Missing native audio stream metadata");
+      const terminalChannels = knownTerminalChannels ?? nativeInteger(metadata.channels, true);
+      if (terminalChannels === expectedChannels) {
+        assert.equal(sawNonExpectedChannels, false, "Decoded audio channel count changed");
+      }
+      assert.equal(lastFrameChannels, terminalChannels, "Native audio stream identity changed");
+      return accumulator.finish();
+    },
+  };
+}
+
+function nativeAudioTimeline(metadata, lines, expected, overrideTick = null) {
+  const parser = createAudioTimelineParser(expected, overrideTick, metadata);
+  for (const raw of lines) parser.pushLine(raw);
+  return parser.finish();
 }
 
 function audioTimelineCacheKey(file, index, overrideTick = null) {
@@ -97,6 +134,11 @@ function audioProbeArgs(file, index) {
 }
 
 function parseAudioTimelineFile(output, stream, overrideTick = null) {
+  const parser = createAudioTimelineParser(stream, overrideTick);
+  if (parser) {
+    for (const line of readEvidenceLines(output)) parser.pushLine(line);
+    return parser.finish();
+  }
   let metadata;
   for (const line of readEvidenceLines(output)) {
     if (!line.startsWith("stream|")) continue;
@@ -139,35 +181,25 @@ function probeAudioTimelineAsync(file, index, stream, ffprobePath, directory, ov
   assert.ok(Number.isSafeInteger(index) && index >= 0 && index < 256, "Invalid audio ordinal");
   const key = audioTimelineCacheKey(file, index, overrideTick);
   if (evidenceCache?.timelines?.has(key)) return Promise.resolve(evidenceCache.timelines.get(key));
-  const owned = fs.mkdtempSync(path.join(directory, ".audio-frame-clock-"));
-  const output = path.join(owned, "frames.txt");
-  const fd = fs.openSync(output, "wx", 0o600);
+  const parser = createAudioTimelineParser(stream, overrideTick);
+  if (!parser) {
+    return Promise.resolve().then(() => probeAudioTimeline(file, index, stream, ffprobePath, directory, overrideTick, evidenceCache));
+  }
   return new Promise((resolve, reject) => {
-    let stderr = "", settled = false, closed = false, escalation = null;
-    const closeFd = () => {
-      if (closed) return;
-      closed = true;
-      try { fs.closeSync(fd); } catch {}
-    };
-    const cleanup = () => {
-      closeFd();
-      try { if (fs.existsSync(output)) fs.unlinkSync(output); } catch {}
-      try { fs.rmdirSync(owned); } catch {}
-    };
+    let stderr = "", pending = "", settled = false, escalation = null, parseError = null;
+    const decoder = new StringDecoder("utf8");
     const finish = (error, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
       if (escalation) clearTimeout(escalation);
-      cleanup();
       if (error) return reject(error);
       return resolve(value);
     };
     let child;
     try {
-      child = spawn(ffprobePath, audioProbeArgs(file, index), { stdio: ["ignore", fd, "pipe"] });
+      child = spawn(ffprobePath, audioProbeArgs(file, index), { stdio: ["ignore", "pipe", "pipe"] });
     } catch (error) {
-      cleanup();
       return reject(error);
     }
     const deadline = setTimeout(() => {
@@ -175,18 +207,36 @@ function probeAudioTimelineAsync(file, index, stream, ffprobePath, directory, ov
       escalation = setTimeout(() => child.kill("SIGKILL"), 5000);
       finish(Error("Complete native audio frame inspection failed: timeout"));
     }, 900000);
+    const consume = (text) => {
+      if (parseError) return;
+      pending += text;
+      let start = 0, newline;
+      while ((newline = pending.indexOf("\n", start)) >= 0) {
+        if (newline - start > 64 * 1024) throw Error("Packet evidence line exceeds64KiB");
+        parser.pushLine(pending.slice(start, newline).replace(/\r$/, ""));
+        start = newline + 1;
+      }
+      if (start > 0) pending = pending.slice(start);
+      if (pending.length > 64 * 1024) throw Error("Packet evidence line exceeds64KiB");
+    };
+    child.stdout.on("data", chunk => {
+      try { consume(decoder.write(chunk)); }
+      catch (error) { parseError = error; child.kill("SIGKILL"); }
+    });
     child.stderr.on("data", chunk => {
       if (stderr.length < 16384) stderr += chunk.toString("utf8");
     });
     child.on("error", error => finish(Error(`Complete native audio frame inspection failed: ${error.message}`)));
     child.on("close", (code, signal) => {
-      closeFd();
+      if (parseError) return finish(parseError);
       const unexpected = unexpectedMediaDiagnostics(stderr);
       if (signal || code !== 0 || unexpected) {
         return finish(Error(`Complete native audio frame inspection failed: ${unexpected.slice(-4000) || signal || code}`));
       }
       try {
-        const timeline = parseAudioTimelineFile(output, stream, overrideTick);
+        const tail = pending + decoder.end();
+        if (tail) parser.pushLine(tail.replace(/\r$/, ""));
+        const timeline = parser.finish();
         evidenceCache?.timelines?.set(key, timeline);
         return finish(null, timeline);
       } catch (error) {

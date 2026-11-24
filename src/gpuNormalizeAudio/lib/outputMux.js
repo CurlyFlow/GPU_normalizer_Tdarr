@@ -13,7 +13,6 @@ const {
   pushBasePackageMaps,
   pushContainerCopyCodecs,
   pushMp4MetadataTagsArgs,
-  pushMp4TrueHdOutputArgs,
   pushPreservedVideoTimescaleArgs,
   pushOutputAudioCodecs,
   pushOutputAudioMetadata,
@@ -37,9 +36,8 @@ function buildCopyOriginalCommand({
   ];
   pushBasePackageMaps(copyArgs, resolvedAudioSpecs, { container, inputStreams });
   pushContainerCopyCodecs(copyArgs);
-  const copiedTrueHdStreams = pushOutputAudioCodecs(copyArgs, resolvedAudioSpecs, { audioBitrate, container });
+  pushOutputAudioCodecs(copyArgs, resolvedAudioSpecs, { audioBitrate, container });
   pushOutputAudioMetadata(copyArgs, resolvedAudioSpecs, inputStreams);
-  pushMp4TrueHdOutputArgs(copyArgs, container, copiedTrueHdStreams);
   pushMp4MetadataTagsArgs(copyArgs, container);
   pushPreservedVideoTimescaleArgs(copyArgs, container, inputStreams);
   copyArgs.push(tmpOutputFilePath);
@@ -73,9 +71,8 @@ function buildFinalMuxCommand({
   }
   pushBasePackageMaps(muxArgs, resolvedAudioSpecs, { container, inputStreams });
   pushContainerCopyCodecs(muxArgs);
-  const copiedTrueHdStreams = pushOutputAudioCodecs(muxArgs, resolvedAudioSpecs, { audioBitrate, container });
+  pushOutputAudioCodecs(muxArgs, resolvedAudioSpecs, { audioBitrate, container });
   pushOutputAudioMetadata(muxArgs, resolvedAudioSpecs, inputStreams);
-  pushMp4TrueHdOutputArgs(muxArgs, container, copiedTrueHdStreams);
   pushMp4MetadataTagsArgs(muxArgs, container);
   pushPreservedVideoTimescaleArgs(muxArgs, container, inputStreams);
   if (movieTimescale !== null) muxArgs.push("-movie_timescale", String(exactMovieTimescale([movieTimescale])));
@@ -133,13 +130,12 @@ function buildDirectMuxCommand({
   ];
   pushBasePackageMaps(directMuxArgs, audioSpecs, { container, inputStreams });
   pushContainerCopyCodecs(directMuxArgs);
-  const copiedTrueHdStreams = pushOutputAudioCodecs(directMuxArgs, audioSpecs, {
+  pushOutputAudioCodecs(directMuxArgs, audioSpecs, {
     audioBitrate,
     container,
     encodeSampleRateArgsFor,
     encodeThreadArgs,
   });
-  pushMp4TrueHdOutputArgs(directMuxArgs, container, copiedTrueHdStreams);
   pushMp4MetadataTagsArgs(directMuxArgs, container);
   pushPreservedVideoTimescaleArgs(directMuxArgs, container, inputStreams);
   pushOutputAudioMetadata(directMuxArgs, audioSpecs, inputStreams);

@@ -57,24 +57,25 @@ function* readEvidenceLines(file) {
   const fd = fs.openSync(file, 'r');
   try {
     const size = fs.fstatSync(fd).size;
-    if (size <= 0 || size > 512 * 1024 * 1024) throw new Error('Packet evidence is empty or exceeds512MiB');
+    if (size <= 0 || size > 4 * 1024 * 1024 * 1024) throw new Error('Packet evidence is empty or exceeds4GiB');
     const buffer = Buffer.allocUnsafe(64 * 1024), decoder = new StringDecoder('utf8');
     let pending = '', bytes = 0, read;
     while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) {
       bytes += read;
       if (bytes > size) throw new Error('Packet evidence changed while reading');
       pending += decoder.write(buffer.subarray(0, read));
-      let newline;
-      while ((newline = pending.indexOf('\n')) >= 0) {
-        if (newline > 64 * 1024) throw new Error('Packet evidence line exceeds64KiB');
-        yield pending.slice(0, newline).replace(/\r$/, '');
-        pending = pending.slice(newline + 1);
+      let start = 0, newline;
+      while ((newline = pending.indexOf('\n', start)) >= 0) {
+        if (newline - start > 64 * 1024) throw new Error('Packet evidence line exceeds64KiB');
+        yield pending.slice(start, newline).replace(/\r$/, '');
+        start = newline + 1;
       }
+      if (start > 0) pending = pending.slice(start);
       if (pending.length > 64 * 1024) throw new Error('Packet evidence line exceeds64KiB');
     }
     pending += decoder.end();
     if (bytes !== size) throw new Error('Incomplete packet evidence read');
-    if (pending) yield pending;
+    if (pending) yield pending.replace(/\r$/, '');
   } finally {
     fs.closeSync(fd);
   }

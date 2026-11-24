@@ -108,8 +108,8 @@ function verifyMetadataCarriers(before, after, offset, options = {}) {
   return { status: "pass", chapters: source.length, globalTags: Object.keys(expectedGlobal) };
 }
 
-function verifyDisposition(source, candidate, containerPromotion) {
-  if (!containerPromotion) {
+function verifyDisposition(source, candidate, containerPromotion, allowDefaultPromotion = false) {
+  if (!containerPromotion && !allowDefaultPromotion) {
     assert.deepEqual(candidate.disposition, source.disposition, "Retained stream disposition changed");
     return;
   }
@@ -118,6 +118,7 @@ function verifyDisposition(source, candidate, containerPromotion) {
   for (const key of Object.keys(before)) {
     if (after[key] === before[key]) continue;
     if (key === "default" && before[key] === 0 && after[key] === 1) continue;
+    if (!containerPromotion) throw Error("Retained stream disposition changed");
     // FFmpeg isom.c dash_role_map couples hearing_impaired<->captions and visual_impaired<->descriptions.
     if (key === "captions" && before.hearing_impaired === 1 && before[key] === 0 && after[key] === 1) continue;
     if (key === "hearing_impaired" && before.captions === 1 && before[key] === 0 && after[key] === 1) continue;
@@ -146,7 +147,7 @@ function verifyStreamMetadata(source, candidate, transformed = false, options = 
     }
   }
   assert.deepEqual(after, before, "Retained stream metadata changed");
-  verifyDisposition(source, candidate, containerPromotion);
+  verifyDisposition(source, candidate, containerPromotion, Boolean(options.allowDefaultPromotion));
 }
 
 function isSynthesizedAudioServiceSideData(source, candidate, containerPromotion) {
@@ -189,10 +190,28 @@ function verifyCopiedStreamProperties(source, candidate, options = {}) {
     "Copied stream native configuration or HDR carrier changed");
 }
 
+function verifyPreparedMediaCarriers(source, candidate, streamMaps, offset) {
+  const containerPromotion = isMkvToMp4Promotion(source, candidate);
+  const outputIsMovie = String(candidate?.format?.format_name || "").split(",").includes("mov");
+  const allowDefaultPromotion = containerPromotion || (outputIsMovie && source.streams.length > candidate.streams.length);
+  const metadata = verifyMetadataCarriers(source, candidate, offset, { containerPromotion });
+  const pairs = streamMaps.map(map => {
+    const before = source.streams.find(stream => stream.index === map.sourceIndex);
+    const after = candidate.streams.find(stream => stream.index === map.preparedIndex);
+    const promotedSubtitle = containerPromotion && before.codec_type === "subtitle"
+      && ["subrip", "ass"].includes(before.codec_name) && after.codec_name === "mov_text";
+    verifyStreamMetadata(before, after, promotedSubtitle, { containerPromotion, allowDefaultPromotion });
+    verifyCopiedStreamProperties(before, after, { containerPromotion });
+    return { map, before, after, promotedSubtitle };
+  });
+  return { containerPromotion, metadata, pairs };
+}
+
 module.exports = {
   canonicalMp4Language,
   isMkvToMp4Promotion,
   verifyMetadataCarriers,
+  verifyPreparedMediaCarriers,
   verifyStreamMetadata,
   verifyCopiedStreamProperties,
 };

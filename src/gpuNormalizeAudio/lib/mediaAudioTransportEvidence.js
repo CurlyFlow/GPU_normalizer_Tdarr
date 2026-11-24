@@ -2,7 +2,7 @@
 
 const assert = require("node:assert/strict");
 const { inspectMedia, inspectStreams } = require("./mediaSourceProbe");
-const { verifyClockFiles, prewarmClockEvidence } = require("./mediaClockVerification");
+const { verifyClockFiles, prewarmClockEvidence, movTextShiftOptions } = require("./mediaClockVerification");
 const { verifyCopiedAudio } = require("./mediaCopiedAudio");
 const { framehash } = require("./mediaFrameEvidence");
 const { fileDigestAsync } = require("./mediaEvidenceFiles");
@@ -46,7 +46,10 @@ async function verifyTransportOutput(spec, output, plans, tools) {
     const input = framehash(spec.candidateFile, `0:${stream.index}`, "copy", tools.ffmpeg, spec.directory, null, spec.evidenceCache);
     const actual = framehash(output, `0:${after.streams[index].index}`, "copy", tools.ffmpeg, spec.directory, null, spec.evidenceCache);
     if (stream.codec_type === "audio") payloads.push({ index: payloads.length, ...comparePacketPayloads(input, actual) });
-    else assert.equal(copiedVideoShift(input, actual).numerator, 0n, "Transport changed a retained stream clock");
+    else {
+      const options = movTextShiftOptions(spec.candidateFile, stream, output, after.streams[index], tools.ffprobe);
+      assert.equal(copiedVideoShift(input, actual, options).numerator, 0n, "Transport changed a retained stream clock");
+    }
   });
   const metadata = verifyMetadataCarriers(before, after, { numerator: "0", denominator: "1" });
   const tables = audioPresentation(output);

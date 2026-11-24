@@ -76,6 +76,19 @@ function headersMatch(beforeHeaders, afterHeaders, allowEquivalentExtradata) {
   return extradataDiffs === 1 && allowEquivalentExtradata() === true;
 }
 
+// SHA-256 of the 2-byte empty 3GPP Timed Text packet (`0x00 0x00`) that FFmpeg
+// `movenc.c` (`mov_write_subtitle_end_packet`) injects with duration=0 during MP4 copy.
+const EMPTY_MOV_TEXT_SHA256 = '96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7';
+
+function nextPacketRow(iterator, skipZeroDurationMovTextEnd) {
+  while (true) {
+    const step = iterator.next();
+    if (step.done || !skipZeroDurationMovTextEnd) return step;
+    const row = step.value;
+    if (!(row.length === 6 && row[3] === '0' && row[4] === '2' && row[5] === EMPTY_MOV_TEXT_SHA256)) return step;
+  }
+}
+
 function videoShift(source, output, comparePixels, options = {}) {
   try {
     const before = packetEvidence(source), after = packetEvidence(output);
@@ -83,11 +96,12 @@ function videoShift(source, output, comparePixels, options = {}) {
       assert.deepEqual(after.headers, before.headers, 'Video configuration changed');
     }
     let offset, pendingDur = null;
-    const matroskaTransformed = !comparePixels
-      && before.base.numerator === 1n && before.base.denominator === 1000n
+    const skipZeroMovTextEnd = Boolean(options.allowZeroDurationMovTextEnd);
+    const matroskaCoarse = before.base.numerator === 1n && before.base.denominator === 1000n
       && after.base.numerator === 1n && after.base.denominator === 1000n;
     while (true) {
-      const left = before.rows.next(), right = after.rows.next();
+      const left = nextPacketRow(before.rows, skipZeroMovTextEnd);
+      const right = nextPacketRow(after.rows, skipZeroMovTextEnd);
       assert.equal(right.done, left.done, 'Video packet count changed');
       if (left.done) break;
       const prior = left.value, next = right.value;
@@ -101,7 +115,7 @@ function videoShift(source, output, comparePixels, options = {}) {
       if (comparePixels) assert.deepEqual(next.slice(5), prior.slice(5), 'Video packet payload changed');
       const sameDur = sameTime(packetTime(next[3], after.base), packetTime(prior[3], before.base));
       if (!sameDur) {
-        assert.ok(matroskaTransformed && BigInt(next[3]) > 0n, 'Video packet duration changed');
+        assert.ok(matroskaCoarse && BigInt(next[3]) > 0n, 'Video packet duration changed');
         pendingDur = { expectedNextPts: BigInt(next[2]) + BigInt(next[3]), priorDur: BigInt(prior[3]), nextDur: BigInt(next[3]) };
       }
       for (const field of [1, 2]) {
@@ -113,6 +127,7 @@ function videoShift(source, output, comparePixels, options = {}) {
       assert.ok(pendingDur.nextDur - pendingDur.priorDur === 1n || pendingDur.priorDur - pendingDur.nextDur === 1n,
         'Video packet duration changed');
     }
+    assert.ok(offset !== undefined, 'Missing packet evidence');
     return offset;
   } finally {
     source.return?.();
@@ -182,7 +197,7 @@ function comparePacketPayloads(source, output) {
   }
 }
 
-function decodedAudioTimeline(frames, rate, tick = null) {
+function createAudioTimelineAccumulator(rate, tick = null) {
   assert.ok(Number.isSafeInteger(rate) && rate > 0, 'Invalid native audio rate');
   const coarseTick = tick && typeof tick.numerator === 'bigint' && typeof tick.denominator === 'bigint'
     && tick.numerator > 0n && tick.denominator > 0n
@@ -190,45 +205,55 @@ function decodedAudioTimeline(frames, rate, tick = null) {
   const segments = [];
   let samples = 0n;
   let previousEnd = null;
-  for (const { start, frameSamples } of frames) {
-    assert.ok(typeof frameSamples === 'bigint' && frameSamples > 0n, 'Invalid decoded audio frame size');
-    assert.ok(typeof start.numerator === 'bigint' && typeof start.denominator === 'bigint'
-      && start.denominator > 0n, 'Invalid native audio PTS');
-    let continuous = false;
-    if (previousEnd !== null) {
-      if (!coarseTick) {
-        continuous = sameTime(start, previousEnd);
-      } else {
-        const withinCoarse = (delta) => {
-          const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
-          return absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
-        };
-        // Coarse container timebases (e.g. Matroska 1/1000s) quantize frame PTS
-        // onto `coarseTick` and may step by 1 tick for PAL/NTSC sync; Matroska
-        // FLAC lacing also accumulates sub-tick truncation across a lace before
-        // snapping back onto the segment's linear clock. Real drops/cuts/overlaps
-        // (> 2 ticks from both previousEnd and segment anchor) remain discontinuities.
-        continuous = withinCoarse(subtract(start, previousEnd));
-        if (!continuous) {
-          const anchor = segments[segments.length - 1];
-          const expected = {
-            numerator: anchor.start.numerator * BigInt(rate) + (samples - anchor.samples) * anchor.start.denominator,
-            denominator: anchor.start.denominator * BigInt(rate),
+  return {
+    push({ start, frameSamples }) {
+      assert.ok(typeof frameSamples === 'bigint' && frameSamples > 0n, 'Invalid decoded audio frame size');
+      assert.ok(typeof start.numerator === 'bigint' && typeof start.denominator === 'bigint'
+        && start.denominator > 0n, 'Invalid native audio PTS');
+      let continuous = false;
+      if (previousEnd !== null) {
+        if (!coarseTick) {
+          continuous = sameTime(start, previousEnd);
+        } else {
+          const withinCoarse = (delta) => {
+            const absNum = delta.numerator < 0n ? -delta.numerator : delta.numerator;
+            return absNum * coarseTick.denominator <= 2n * coarseTick.numerator * delta.denominator;
           };
-          continuous = withinCoarse(subtract(start, expected));
+          // Coarse container timebases (e.g. Matroska 1/1000s) quantize frame PTS
+          // onto `coarseTick` and may step by 1 tick for PAL/NTSC sync; Matroska
+          // FLAC lacing also accumulates sub-tick truncation across a lace before
+          // snapping back onto the segment's linear clock. Real drops/cuts/overlaps
+          // (> 2 ticks from both previousEnd and segment anchor) remain discontinuities.
+          continuous = withinCoarse(subtract(start, previousEnd));
+          if (!continuous) {
+            const anchor = segments[segments.length - 1];
+            const expected = {
+              numerator: anchor.start.numerator * BigInt(rate) + (samples - anchor.samples) * anchor.start.denominator,
+              denominator: anchor.start.denominator * BigInt(rate),
+            };
+            continuous = withinCoarse(subtract(start, expected));
+          }
         }
       }
-    }
-    if (!continuous) {
-      assert.ok(segments.length < 100000, 'Too many audio discontinuities');
-      segments.push({ samples, start });
-    }
-    previousEnd = { numerator: start.numerator * BigInt(rate) + frameSamples * start.denominator,
-      denominator: start.denominator * BigInt(rate) };
-    samples += frameSamples;
-  }
-  assert.ok(samples > 0n, 'Missing decoded audio frames');
-  return coarseTick ? { samples, segments, rate, coarseTick } : { samples, segments, rate };
+      if (!continuous) {
+        assert.ok(segments.length < 100000, 'Too many audio discontinuities');
+        segments.push({ samples, start });
+      }
+      previousEnd = { numerator: start.numerator * BigInt(rate) + frameSamples * start.denominator,
+        denominator: start.denominator * BigInt(rate) };
+      samples += frameSamples;
+    },
+    finish() {
+      assert.ok(samples > 0n, 'Missing decoded audio frames');
+      return coarseTick ? { samples, segments, rate, coarseTick } : { samples, segments, rate };
+    },
+  };
+}
+
+function decodedAudioTimeline(frames, rate, tick = null) {
+  const accumulator = createAudioTimelineAccumulator(rate, tick);
+  for (const frame of frames) accumulator.push(frame);
+  return accumulator.finish();
 }
 
 function audioTimeline(lines, channels, rate, sampleBytes) {
@@ -297,4 +322,4 @@ function compareAudioTimeline(source, output, sourceSpec, outputSpec, offset) {
 }
 
 module.exports = { copiedVideoShift, transformedVideoShift, transformedPacketShift, copiedVideoOffset, compareAudioTimeline,
-  decodedAudioTimeline, compareAudioTimelines, comparePacketPayloads };
+  createAudioTimelineAccumulator, decodedAudioTimeline, compareAudioTimelines, comparePacketPayloads };
