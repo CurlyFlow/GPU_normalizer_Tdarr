@@ -22,14 +22,14 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def _snapshot_metadata(version: str, snapshot_path: str) -> dict[str, str]:
+def _snapshot_metadata(version: str, snapshot_path: str, generated_by: str) -> dict[str, str]:
     return {
         'schema': MANIFEST_SCHEMA,
         'plugin': PLUGIN_NAME,
         'version': version,
         'sourcePath': SOURCE_PATH,
         'snapshotPath': snapshot_path,
-        'generatedBy': GENERATED_BY,
+        'generatedBy': generated_by,
     }
 
 
@@ -58,11 +58,11 @@ def _file_entry(root: str, rel: str, path: str) -> dict[str, str]:
     }
 
 
-def write_manifest(version: str, snapshot_path: str, root: str) -> None:
+def write_manifest(version: str, snapshot_path: str, root: str, *, generated_by: str = GENERATED_BY) -> None:
     files = [_file_entry(root, rel, path) for rel, path in _iter_snapshot_files(root)]
     files.sort(key=lambda entry: entry['path'])
     manifest = {
-        **_snapshot_metadata(version, snapshot_path),
+        **_snapshot_metadata(version, snapshot_path, generated_by),
         'files': files,
     }
     with open(os.path.join(root, MANIFEST_NAME), 'w', encoding='utf-8') as handle:
@@ -114,14 +114,15 @@ def _archive_snapshot_files(root: str) -> list[str]:
     return [rel for rel, _ in _iter_snapshot_files(root)]
 
 
-def validate_manifest(manifest_path: str, version: str, root: str, expected_root: str, tracked: str) -> None:
+def validate_manifest(manifest_path: str, version: str, root: str, expected_root: str, tracked: str,
+                      *, generated_by: str = GENERATED_BY) -> None:
     try:
         with open(manifest_path, 'r', encoding='utf-8') as handle:
             manifest = json.load(handle)
     except Exception as exc:
         fail(f'invalid release manifest {manifest_path}: {exc}')
 
-    for key, value in _snapshot_metadata(version, expected_root).items():
+    for key, value in _snapshot_metadata(version, expected_root, generated_by).items():
         if manifest.get(key) != value:
             fail(f'release manifest {key} mismatch: got {manifest.get(key)!r}, expected {value!r}')
 

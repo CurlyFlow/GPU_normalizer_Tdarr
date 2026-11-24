@@ -66,6 +66,28 @@ test("release privacy scan blocks full release names and redacts local env terms
   }
 });
 
+test("release manifest producer stays pinned at the public validation boundary", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "release-manifest-contract-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "index.js"), "module.exports = {};\n");
+  const run = (...args) => spawnSync("python3", ["-B", ...args], {
+    cwd: repoRoot, encoding: "utf8", timeout: 10000,
+  });
+  const location = "fixture/1.2.3";
+  const manifestPath = path.join(root, "release-manifest.json");
+  const write = run("scripts/release_manifest.py", "write", "1.2.3", location, root);
+  assert.equal(write.status, 0, write.stderr);
+  const validate = () => run("scripts/validate-release-manifest", manifestPath, "1.2.3", root, location, "0");
+  const accepted = validate();
+  assert.equal(accepted.status, 0, accepted.stderr);
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  manifest.generatedBy = "another-producer.v1";
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  const rejected = validate();
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /generatedBy mismatch/);
+});
+
 test("source lint rejects unresolved context fields and permits real Node globals", () => {
   const eslint = path.join(repoRoot, "node_modules/eslint/bin/eslint.js");
   for (const [input, expected] of [
