@@ -11,6 +11,12 @@ const { verifyVideoInWorker } = require("./pipelineVideoWorker");
 const { retainPreparationIntent } = require("./pipelinePreparationIntent");
 const { verifyFinish } = require("./pipelineFinish");
 const { retainedReceipt } = require("./mediaEvidenceFiles");
+const { inspectMedia } = require("./mediaSourceProbe");
+const {
+  buildMp4LeadingChapterMetadata,
+  ensureMp4Av1DoviBoxes,
+  wireMp4ChapterMetadataInput,
+} = require("./mediaIsoCarriers");
 
 function probeFailure(message, code, mediaProbe) {
   return Object.assign(new Error(message), { code, mediaProbe });
@@ -175,16 +181,32 @@ function createMediaRuntime(pluginRoot, tools = mediaTools({})) {
       await fs.mkdir(directory, { recursive: true });
       const original = args.originalLibraryFile._id;
       const output = path.join(directory, `${path.basename(original, path.extname(original))}.${container}`);
-      const spawnArgs = ["-nostdin", "-n", ...inputs, ...outputs, output, ...extraOutputs];
-      args.jobLog(label);
-      const cli = new CLI({ cli: mediaTools(args).ffmpeg, spawnArgs, spawnOpts: {},
-        jobLog: args.logFullCliOutput ? args.jobLog : () => {}, outputFilePath: output,
-        inputFileObj: args.inputFileObj, logFullCliOutput: args.logFullCliOutput,
-        updateWorker: args.updateWorker, args });
-      const result = await cli.runCli();
-      requireCliSuccess(result, cli.cancelled, label);
+      const activeTools = mediaTools(args);
+      let execInputs = inputs, execOutputs = outputs, sourceMedia = null, chapterMetaPath = null;
+      if (container === "mp4" && inputs[0] === "-i" && typeof inputs[1] === "string") {
+        sourceMedia = inspectMedia(inputs[1], activeTools.ffprobe);
+        const chapterMeta = buildMp4LeadingChapterMetadata(sourceMedia);
+        if (chapterMeta) {
+          chapterMetaPath = path.join(directory, `.chapters-${randomUUID()}.ffmeta`);
+          await fs.writeFile(chapterMetaPath, chapterMeta, { mode: 0o600 });
+          ({ inputs: execInputs, outputs: execOutputs } = wireMp4ChapterMetadataInput(inputs, outputs, chapterMetaPath));
+        }
+      }
+      try {
+        const spawnArgs = ["-nostdin", "-n", ...execInputs, ...execOutputs, output, ...extraOutputs];
+        args.jobLog(label);
+        const cli = new CLI({ cli: activeTools.ffmpeg, spawnArgs, spawnOpts: {},
+          jobLog: args.logFullCliOutput ? args.jobLog : () => {}, outputFilePath: output,
+          inputFileObj: args.inputFileObj, logFullCliOutput: args.logFullCliOutput,
+          updateWorker: args.updateWorker, args });
+        const result = await cli.runCli();
+        requireCliSuccess(result, cli.cancelled, label);
+        if (sourceMedia) ensureMp4Av1DoviBoxes(sourceMedia.streams, output);
+      } finally {
+        if (chapterMetaPath) await fs.rm(chapterMetaPath, { force: true });
+      }
       args.logOutcome("tSuc");
-      return await probeWorkingFile(output, args.inputFileObj, mediaTools(args).ffprobe);
+      return await probeWorkingFile(output, args.inputFileObj, activeTools.ffprobe);
     },
     async replace(args) {
       try {

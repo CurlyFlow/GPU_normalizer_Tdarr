@@ -86,7 +86,9 @@ function inspectRun(reader, run, header, previous, location, mdats, targets, bud
     const duration = sample.take(0x100, 4, header.duration), length = sample.take(0x200, 4, header.size);
     const flags = sample.take(0x400, 4, index === 0 ? firstFlags : header.sampleFlags);
     const composition = sample.take(0x800, 4, 0n, info.version === 1);
-    assert.ok(duration > 0n && length > 0n, "Invalid fragment sample");
+    const isZeroMovTextEnd = duration === 0n && length === 2n
+      && header.track.kind === "sbtl" && reader.read(data, Number(position), 2) === 0n;
+    assert.ok((duration > 0n || isZeroMovTextEnd) && length > 0n, "Invalid fragment sample");
     assert.ok(position + length <= BigInt(data.end), "Sample escapes media data");
     recordSample(header.track, targets, [...location, index + 1].join(":"),
       { dts: decode, pts: decode + composition, duration }, flags, location[2] === 1 && index === 0);

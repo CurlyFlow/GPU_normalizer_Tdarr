@@ -4,15 +4,19 @@ const assert = require("node:assert/strict");
 const { inspectStreams, inspectMedia } = require("./mediaSourceProbe");
 const { framehash } = require("./mediaFrameEvidence");
 const { copiedVideoShift, transformedPacketShift } = require("./mediaClockEvidence");
-const { verifyMappedAudioClocks } = require("./mediaClockVerification");
+const { verifyMappedAudioClocks, equivalentHevcExtradata } = require("./mediaClockVerification");
 const { verifyCopiedAudio } = require("./mediaCopiedAudio");
 const { fileDigest } = require("./mediaEvidenceFiles");
-const { isMkvToMp4Promotion, verifyMetadataCarriers } = require("./mediaMetadataEvidence");
+const { canonicalSideDataList, isMkvToMp4Promotion, verifyMetadataCarriers } = require("./mediaMetadataEvidence");
 const { preserveVideoAudio } = require("./pipelineVideoAudio");
+const { isPlexDirectVideoCodec } = require("./mp4ContainerPolicy");
 
-function videoProperties(stream, normalizedRange = false) {
+function videoProperties(stream, normalizedRange = false, containerPromotion = false) {
   return ["width", "height", "pix_fmt", "sample_aspect_ratio", "field_order", "color_range", "color_space",
     "color_transfer", "color_primaries", "chroma_location", "side_data_list"].map(key => {
+    if (key === "side_data_list") {
+      return [key, canonicalSideDataList(stream.side_data_list, { containerPromotion })];
+    }
     const value = stream[key] ?? null;
     if (normalizedRange && value === null) {
       if (key === "color_range") return [key, "tv"];
@@ -64,21 +68,27 @@ async function verifyVideoStage(request, directory, tools) {
   if (!sourceVideo.length || candidateVideo.length !== sourceVideo.length) throw Error("Video stage frame coverage changed");
   if (candidateAudio.length !== sourceAudio.length) throw Error("Video stage audio stream count changed");
   if (candidateSubtitles.length !== sourceSubtitles.length + request.sidecars.length) throw Error("Video stage subtitle stream count changed");
-  const converted = sourceVideo.some(stream => stream.codec_name !== "hevc");
+  const beforeMedia = inspectMedia(request.sourceFile, tools.ffprobe);
+  const containerPromotion = isMkvToMp4Promotion(beforeMedia, inspectMedia(request.candidateFile, tools.ffprobe));
+  const converted = sourceVideo.some(stream => !isPlexDirectVideoCodec(stream.codec_name));
   if (converted !== (request.encoder !== null)) throw Error("Executed video encoder does not match source codecs");
   let offset = null;
   const videos = sourceVideo.map((stream, index) => {
     const actual = candidateVideo[index];
-    if (stream.codec_name !== "hevc" && (["smpte2084", "arib-std-b67"].includes(stream.color_transfer)
+    const transcoded = !isPlexDirectVideoCodec(stream.codec_name);
+    if (transcoded && (["smpte2084", "arib-std-b67"].includes(stream.color_transfer)
         || (stream.side_data_list || []).length)) throw Error("HDR/side-data video conversion lacks an independently admitted carrier transform");
-    const transcoded = stream.codec_name !== "hevc";
-    assert.deepEqual(videoProperties(actual, transcoded), videoProperties(stream, transcoded), "Video native pixels, geometry, color or HDR metadata changed");
-    if (actual.codec_name !== "hevc") throw Error("Video stage did not produce the intended HEVC codec");
+    assert.deepEqual(videoProperties(actual, transcoded, containerPromotion),
+      videoProperties(stream, transcoded, containerPromotion), "Video native pixels, geometry, color or HDR metadata changed");
+    const expectedCodec = transcoded ? "hevc" : stream.codec_name;
+    if (actual.codec_name !== expectedCodec) throw Error("Video stage did not produce the intended target codec");
     const sourcePackets = framehash(request.sourceFile, `0:v:${index}`, "copy", tools.ffmpeg, directory);
     const candidatePackets = framehash(request.candidateFile, `0:v:${index}`, "copy", tools.ffmpeg, directory);
+    const hevcCopy = !transcoded && stream.codec_name === "hevc" && actual.codec_name === "hevc";
     const shift = transcoded
       ? transformedPacketShift(sourcePackets, candidatePackets)
-      : copiedVideoShift(sourcePackets, candidatePackets);
+      : copiedVideoShift(sourcePackets, candidatePackets,
+        hevcCopy ? { allowEquivalentExtradata: () => equivalentHevcExtradata(request.sourceFile, index, request.candidateFile, index, tools.ffprobe) } : {});
     if (offset && !sameOffset(offset, shift)) throw Error("Video streams have independent timeline shifts");
     offset = shift;
     return { index, status: "pass", kind: transcoded ? "hevc_nvenc" : "copy" };
@@ -98,7 +108,6 @@ async function verifyVideoStage(request, directory, tools) {
   const clock = verifyMappedAudioClocks(spec, offset);
   const copiedAudio = await verifyCopiedAudio(spec);
   const errors = [...clock.errors, ...copiedAudio.flatMap(item => item.errors)];
-  const beforeMedia = inspectMedia(request.sourceFile, tools.ffprobe);
   const afterMedia = inspectMedia(preserved.output, tools.ffprobe);
   const metadata = verifyMetadataCarriers(beforeMedia, afterMedia,
     { numerator: String(offset.numerator), denominator: String(offset.denominator) },

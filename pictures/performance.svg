@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360" role="img" aria-label="GPU Normalize Audio Performance vs Tdarr CPU Reference">
   <style>text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }</style>
   <rect width="980" height="360" rx="14" fill="#0b1120" stroke="#1e293b" stroke-width="1.5"/>
-  <text x="28" y="36" fill="#f8fafc" font-size="18" font-weight="700">GPU Normalize Audio v1.2.10 vs. Tdarr CPU Normalize Audio</text>
+  <text x="28" y="36" fill="#f8fafc" font-size="18" font-weight="700">GPU Normalize Audio v1.2.11 vs. Tdarr CPU Normalize Audio</text>
   <text x="28" y="56" fill="#94a3b8" font-size="12">Combined 5.1 + generated 2ch wall time (lower is faster) · i9-9900K @ 5 GHz CPU vs. GTX 1050 Ti GPU · 100% exact decoded parity</text>
   <rect x="28" y="68" width="12" height="10" rx="2" fill="#475569"/>
   <text x="46" y="77" fill="#94a3b8" font-size="11">Tdarr CPU Reference</text>
   <rect x="180" y="68" width="12" height="10" rx="2" fill="#10b981"/>
-  <text x="198" y="77" fill="#6ee7b7" font-size="11">GPU Normalize Audio v1.2.10</text>
+  <text x="198" y="77" fill="#6ee7b7" font-size="11">GPU Normalize Audio v1.2.11</text>
   <rect x="20" y="92" width="940" height="64" rx="8" fill="#111827" stroke="#1e293b"/>
   <text x="38" y="129" fill="#f8fafc" font-size="15" font-weight="700">60 min</text>
   <rect x="115" y="104" width="555" height="16" rx="4" fill="#475569"/>

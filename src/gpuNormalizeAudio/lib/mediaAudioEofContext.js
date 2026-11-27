@@ -16,7 +16,7 @@ const { observeNativeAudioWindow } = require("./mediaOriginalAudioWindow");
 const { normalizedAacCountDomain } = require("./audioSampleCounts");
 const { storedAudioPresentation, validateDeclaredWindow } = require("./mediaAudioWindow");
 const { validateEofBinding } = require("./mediaClockProtocol");
-const { assertNormalizedAacWindowCounts } = require("./audioClockPlan");
+const { assertNormalizedAacWindowCounts, reduceRational } = require("./audioClockPlan");
 require("./mediaAudioValueWorker");
 
 const SCHEMA = "media-audio-eof-context.v1";
@@ -80,6 +80,7 @@ function resolvePreparationAuthority(args, source, tools) {
     original: { file: originalId, identity: fileDigest(originalId) },
     mapping: args.variables.mediaPipelinePreparation,
     evidence: retainedReceipt(receipt),
+    commonOffset: receipt.common_offset,
   };
 }
 
@@ -346,10 +347,22 @@ function assertAudioMapMatchesEofContext(audioMap, eofContext) {
   });
 }
 
-function verifyNormalizedAacWindow(entry, candidateWindow, domain, offset) {
+function preparedOriginalEnd(eofContext, entry) {
+  const raw = entry.originalWindow.window.declaredEnd;
+  const prepShift = eofContext?.preparation?.commonOffset;
+  if (!prepShift) return raw;
+  const rawNum = BigInt(raw.numerator), rawDen = BigInt(raw.denominator);
+  const shiftNum = BigInt(prepShift.numerator), shiftDen = BigInt(prepShift.denominator);
+  assert.ok(rawDen > 0n && shiftDen > 0n, "Invalid preparation offset denominator");
+  if (shiftNum === 0n) return raw;
+  const reduced = reduceRational(rawNum * shiftDen + shiftNum * rawDen, rawDen * shiftDen);
+  return { numerator: String(reduced.numerator), denominator: String(reduced.denominator) };
+}
+
+function verifyNormalizedAacWindow(entry, candidateWindow, domain, offset, eofContext = null) {
   assertNormalizedAacWindowCounts(candidateWindow, domain, entry.encodedRate);
   validateDeclaredWindow({
-    input: entry.originalWindow.window.declaredEnd,
+    input: preparedOriginalEnd(eofContext, entry),
     output: candidateWindow.declaredEnd,
     shift: { numerator: String(offset.numerator), denominator: String(offset.denominator) },
   });
@@ -358,5 +371,6 @@ function verifyNormalizedAacWindow(entry, candidateWindow, domain, offset) {
 module.exports = {
   SCHEMA, SCOPE, validateEofBinding, buildNormalizedEofContext, validateNormalizedEofContext,
   retainNormalizedEofContext, maybeRetainNormalizedEofContext, readNormalizedEofContextForWorker,
-  assertAudioMapMatchesEofContext, usesNormalizedEof, resolveNormalizedEofCounts, verifyNormalizedAacWindow,
+  assertAudioMapMatchesEofContext, usesNormalizedEof, resolveNormalizedEofCounts,
+  preparedOriginalEnd, verifyNormalizedAacWindow,
 };

@@ -19,6 +19,7 @@ const { gainSkippedStereoCommand } = require("./audioGainPolicy");
 const { tryDirectClockFinalMux } = require("./finalClockMux");
 const { isMovieContainer } = require("./outputAudioSpecs");
 const { computeMkvNormalizedInputOffsets } = require("./mkvMuxOffsets");
+const { ensureMp4Av1DoviBoxes } = require("./mediaIsoCarriers");
 
 function hasMediaPipelineContext(args) {
   return Boolean(
@@ -183,6 +184,9 @@ function createOutputFinalizer({ model, runtimeContext, observeValues = observeA
           },
         });
         logProfileStage(args, { scope: "plugin", name: "final_mux", wall_sec: muxRes.wallSec });
+        if (isMovieContainer(container)) {
+          ensureMp4Av1DoviBoxes(args.inputFileObj?.ffProbeData?.streams || [], tmpOutputFilePath);
+        }
       }
     }
     return await publishOutputPackage({

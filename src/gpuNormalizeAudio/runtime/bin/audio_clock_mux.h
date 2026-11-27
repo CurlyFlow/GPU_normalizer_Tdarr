@@ -13,6 +13,7 @@ int clock_movie_timescale(const AVFormatContext *input, const ClockPlan *plan);
 const char *clock_mux_format(const AVFormatContext *input);
 int clock_has_mov_text_btrt(const AVFormatContext *output);
 int clock_video_timescale(const AVFormatContext *output);
+void clock_restore_stream_duration(AVPacket *packet, AVStream *before, uint64_t sample_index);
 int merge_clock_audio(char **arguments);
 int mux_clock_audio(char **arguments);
 #endif

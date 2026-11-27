@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { inspectStreams, inspectMedia } = require("./mediaSourceProbe");
-const { verifyMappedAudioClocks, movTextShiftOptions } = require("./mediaClockVerification");
+const { verifyMappedAudioClocks, movTextShiftOptions, equivalentHevcExtradata } = require("./mediaClockVerification");
 const { probeAudioTimeline } = require("./mediaNativeAudioClock");
 const { planAacPreservation, encodeClockPlan } = require("./audioClockPlan");
 const { snapshotCarrier, runPreservingCarrier } = require("./mediaTransportCarrier");
@@ -33,7 +33,10 @@ function verifyPreservedPayloads(source, template, output, sourceStreams, templa
     const left = framehash(input, `0:${before.index}`, "copy", tools.ffmpeg, directory);
     const right = framehash(output, `0:${stream.index}`, "copy", tools.ffmpeg, directory);
     if (stream.type === "audio") return { index, status: "pass", ...comparePacketPayloads(left, right) };
-    const shift = copiedVideoShift(left, right, movTextShiftOptions(input, before, output, stream, tools.ffprobe));
+    const shiftOptions = before.codec_name === "hevc" && stream.codec_name === "hevc"
+      ? { allowEquivalentExtradata: () => equivalentHevcExtradata(input, before.index, output, stream.index, tools.ffprobe) }
+      : movTextShiftOptions(input, before, output, stream, tools.ffprobe);
+    const shift = copiedVideoShift(left, right, shiftOptions);
     assert.equal(shift.numerator, 0n, "Merged non-audio clock changed");
     return { index, status: "pass" };
   });

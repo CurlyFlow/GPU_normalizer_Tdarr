@@ -79,9 +79,24 @@ function verifyMetadataCarriers(before, after, offset, options = {}) {
   }
   assert.deepEqual(actualGlobal, expectedGlobal, "Global metadata changed");
   const source = before.chapters || [], candidate = after.chapters || [];
-  if (!Array.isArray(source) || !Array.isArray(candidate) || source.length !== candidate.length) throw Error("Chapter coverage changed");
+  if (!Array.isArray(source) || !Array.isArray(candidate)) throw Error("Chapter coverage changed");
+  let candidateChapters = candidate;
+  if (containerPromotion && source.length > 0 && candidate.length === source.length + 1) {
+    const firstSourceStart = rational(source[0].start, source[0].time_base);
+    const preTags = tags(candidate[0].tags);
+    const preStart = rational(candidate[0].start, candidate[0].time_base);
+    const preEnd = rational(candidate[0].end, candidate[0].time_base);
+    if (firstSourceStart.numerator > 0n
+        && Object.keys(preTags).every(key => key === "title")
+        && (preTags.title ?? "") === ""
+        && preStart.numerator === 0n
+        && sameTimeWithin(firstSourceStart, preEnd, offset, 1n, 1000n)) {
+      candidateChapters = candidate.slice(1);
+    }
+  }
+  if (source.length !== candidateChapters.length) throw Error("Chapter coverage changed");
   source.forEach((chapter, index) => {
-    const actual = candidate[index];
+    const actual = candidateChapters[index];
     const beforeChapterTags = tags(chapter.tags);
     const actualChapterTags = tags(actual.tags);
     if (containerPromotion) {
@@ -175,18 +190,58 @@ function isEquivalentInterlacedFieldOrder(source, candidate, containerPromotion)
       || (source.field_order === "bt" && candidate.field_order === "bb")));
 }
 
+const MDM_CHROMATICITY_KEYS = new Set([
+  "red_x", "red_y", "green_x", "green_y", "blue_x", "blue_y", "white_point_x", "white_point_y",
+]);
+const MDM_LUMINANCE_KEYS = new Set(["min_luminance", "max_luminance"]);
+
+function quantizeRational(value, scaleDen) {
+  const match = String(value ?? "").match(/^(-?\d+)\/([1-9]\d*)$/);
+  if (!match) return value;
+  const num = BigInt(match[1]), den = BigInt(match[2]);
+  const sign = num < 0n ? -1n : 1n;
+  const absNum = num < 0n ? -num : num;
+  const scaled = sign * ((absNum * scaleDen * 2n + den) / (2n * den));
+  return `${scaled}/${scaleDen}`;
+}
+
+// Matroska stores Mastering Display Metadata as 32-bit IEEE-754 floats, whereas ISO MP4
+// `mdcv` stores SMPTE ST 2086 unsigned fixed-point 1/50000 chromaticity and 1/10000 luminance.
+function canonicalSideDataList(list, { containerPromotion = false } = {}) {
+  if (!Array.isArray(list) || list.length === 0) return list ?? null;
+  const normalized = list.map(entry => {
+    if (!entry || typeof entry !== "object") return entry;
+    const copy = { ...entry };
+    if (containerPromotion && copy.side_data_type === "Mastering display metadata") {
+      for (const key of Object.keys(copy)) {
+        if (MDM_CHROMATICITY_KEYS.has(key)) copy[key] = quantizeRational(copy[key], 50000n);
+        else if (MDM_LUMINANCE_KEYS.has(key)) copy[key] = quantizeRational(copy[key], 10000n);
+      }
+    }
+    return Object.fromEntries(Object.entries(copy).sort(([a], [b]) => a.localeCompare(b)));
+  });
+  return normalized.sort((left, right) => {
+    const typeCmp = String(left?.side_data_type || "").localeCompare(String(right?.side_data_type || ""));
+    return typeCmp || JSON.stringify(left).localeCompare(JSON.stringify(right));
+  });
+}
+
 function verifyCopiedStreamProperties(source, candidate, options = {}) {
-  const promotedSubtitle = options.containerPromotion && source.codec_type === "subtitle"
+  const containerPromotion = Boolean(options.containerPromotion);
+  const promotedSubtitle = containerPromotion && source.codec_type === "subtitle"
     && ["subrip", "ass"].includes(source.codec_name) && candidate.codec_name === "mov_text";
-  const synthesizedAudioSideData = isSynthesizedAudioServiceSideData(source, candidate, options.containerPromotion);
-  const omittedDefaultRange = isOmittedDefaultColorRange(source, candidate, options.containerPromotion);
-  const equivalentFieldOrder = isEquivalentInterlacedFieldOrder(source, candidate, options.containerPromotion);
+  const synthesizedAudioSideData = isSynthesizedAudioServiceSideData(source, candidate, containerPromotion);
+  const omittedDefaultRange = isOmittedDefaultColorRange(source, candidate, containerPromotion);
+  const equivalentFieldOrder = isEquivalentInterlacedFieldOrder(source, candidate, containerPromotion);
   const properties = ["codec_type", ...(promotedSubtitle ? [] : ["codec_name"]), "profile", "width", "height", "pix_fmt", "sample_aspect_ratio",
     ...(equivalentFieldOrder ? [] : ["field_order"]),
     ...(omittedDefaultRange ? [] : ["color_range"]), "color_space", "color_transfer", "color_primaries", "chroma_location",
     ...(synthesizedAudioSideData ? [] : ["side_data_list"]),
     "channels", "channel_layout", "sample_rate", "sample_fmt"];
-  assert.deepEqual(properties.map(key => candidate[key] ?? null), properties.map(key => source[key] ?? null),
+  const readProp = (stream, key) => (key === "side_data_list"
+    ? canonicalSideDataList(stream.side_data_list, { containerPromotion })
+    : (stream[key] ?? null));
+  assert.deepEqual(properties.map(key => readProp(candidate, key)), properties.map(key => readProp(source, key)),
     "Copied stream native configuration or HDR carrier changed");
 }
 
@@ -209,6 +264,7 @@ function verifyPreparedMediaCarriers(source, candidate, streamMaps, offset) {
 
 module.exports = {
   canonicalMp4Language,
+  canonicalSideDataList,
   isMkvToMp4Promotion,
   verifyMetadataCarriers,
   verifyPreparedMediaCarriers,

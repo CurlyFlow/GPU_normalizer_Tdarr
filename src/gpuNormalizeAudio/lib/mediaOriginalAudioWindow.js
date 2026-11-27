@@ -8,12 +8,7 @@ const { decoderIdentity } = require("./mediaEvidenceTools");
 const { fileDigest, sameFileGeneration } = require("./mediaEvidenceFiles");
 const { storedAudioPresentation } = require("./mediaAudioWindow");
 const { probeAudioTimeline } = require("./mediaNativeAudioClock");
-
-function rationalGcd(a, b) {
-  let x = a < 0n ? -a : a, y = b < 0n ? -b : b;
-  while (y) [x, y] = [y, x % y];
-  return x || 1n;
-}
+const { reduceRational } = require("./audioClockPlan");
 
 function openOriginalAudio(file, audioIndex, ffprobePath) {
   assert.ok(typeof file === "string" && !file.includes("\0") && path.isAbsolute(file)
@@ -60,8 +55,8 @@ function observeNativeAudioWindow(file, audioIndex, ffprobePath, directory) {
   const timeline = probeAudioTimeline(file, audioIndex, stream, ffprobeExec, directory);
   const last = timeline.segments.at(-1), tail = timeline.samples - last.samples, rate = BigInt(timeline.rate);
   const rawNum = last.start.numerator * rate + tail * last.start.denominator, rawDen = last.start.denominator * rate;
-  const divisor = rationalGcd(rawNum, rawDen);
-  const declaredEnd = { numerator: String(rawNum / divisor), denominator: String(rawDen / divisor) };
+  const reduced = reduceRational(rawNum, rawDen);
+  const declaredEnd = { numerator: String(reduced.numerator), denominator: String(reduced.denominator) };
   assert.deepEqual(decoderIdentity(ffprobePath), prober, "Original audio window prober changed");
   unchanged();
   return { schema: "media-original-audio-window.v1", scope: "observed-native-timeline-window-only", file, identity,

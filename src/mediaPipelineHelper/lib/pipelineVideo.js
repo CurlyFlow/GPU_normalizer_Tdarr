@@ -2,8 +2,17 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-const { pushChapterCarrierExclusions, pushMp4ConvertibleSubtitleArgs, pushMp4MetadataTagsArgs } = require("./outputAudioSpecs");
+const { pushChapterCarrierExclusions, pushMp4ConvertibleSubtitleArgs } = require("./outputAudioSpecs");
 const { movieHeaderTimescale } = require("./movieTimescale");
+const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
+const {
+  isPlexDirectVideoCodec,
+  pushCanonicalMp4StreamLanguageArgs,
+  pushHevcChromaLocationBsfArgs,
+  pushPlexFinalMp4Flags,
+  pushPlexMp4VideoTagArgs,
+  sourceVideoTimescale,
+} = require("./mp4ContainerPolicy");
 
 function canonicalLanguage(value) {
   const language = String(value || "").toLowerCase();
@@ -48,18 +57,22 @@ function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", 
   const outputs = ["-map", "0", "-map_metadata", "0", "-map_chapters", "0", "-c", "copy"];
   pushChapterCarrierExclusions(outputs, "mp4", streams);
   let videoIndex = 0;
-  let matroskaVideoClock = false;
   for (const stream of streams) {
     if (stream.codec_type !== "video") continue;
-    if (stream.time_base === "1/1000") matroskaVideoClock = true;
-    if (stream.codec_name !== "hevc") {
+    const convertStream = !isPlexDirectVideoCodec(stream.codec_name);
+    if (convertStream) {
       outputs.push(`-c:v:${videoIndex}`, encoder.encoder, `-qp:v:${videoIndex}`, String(settings.videoQuality),
         `-preset:v:${videoIndex}`, settings.videoPreset, ...(encoder.outputArgs || []));
       if (stream.time_base === "1/1000") outputs.push(`-fps_mode:v:${videoIndex}`, "passthrough", `-enc_time_base:v:${videoIndex}`, "-1");
+      pushHevcChromaLocationBsfArgs(outputs, stream, videoIndex);
     }
+    pushPlexMp4VideoTagArgs(outputs, videoIndex, convertStream ? "hevc" : stream.codec_name);
     videoIndex += 1;
   }
-  if (matroskaVideoClock) outputs.push("-video_track_timescale", "1000");
+  const videoScale = sourceVideoTimescale(streams);
+  if (videoScale) outputs.push("-video_track_timescale", videoScale);
+  const retainedStreams = streams.filter(stream => !isRegeneratedChapterCarrier("mp4", stream));
+  pushCanonicalMp4StreamLanguageArgs(outputs, retainedStreams);
   const retainedSubCount = pushMp4ConvertibleSubtitleArgs(outputs, streams);
   if (sidecars.length) {
     sidecars.forEach((sidecar, index) => {
@@ -72,7 +85,7 @@ function planVideo(file, settings, sidecars, encoder = { encoder: "hevc_nvenc", 
     });
   }
   outputs.push("-ignore_unknown", "-max_muxing_queue_size", "99999");
-  pushMp4MetadataTagsArgs(outputs, "mp4");
+  pushPlexFinalMp4Flags(outputs);
   if (movieTimescale !== null && movieTimescale > 0n && movieTimescale <= 2147483647n) {
     outputs.push("-movie_timescale", String(movieTimescale));
   }
@@ -86,7 +99,7 @@ function preservedMovieTimescale(file) {
 async function processVideo(args, settings, runtime, runPhase) {
   const sidecars = selectedVideoSidecars(args.originalLibraryFile._id, settings.sidecars,
     args.variables.mediaPipelinePreparationPlan);
-  const convert = args.inputFileObj.ffProbeData.streams.some((s) => s.codec_type === "video" && s.codec_name !== "hevc");
+  const convert = args.inputFileObj.ffProbeData.streams.some((s) => s.codec_type === "video" && !isPlexDirectVideoCodec(s.codec_name));
   const encoder = convert ? await runtime.encoder(args) : undefined;
   const executeVerified = async (working, companions, selectedEncoder, resource) => await runPhase(resource, async () => {
     const scale = preservedMovieTimescale(working.inputFileObj._id);

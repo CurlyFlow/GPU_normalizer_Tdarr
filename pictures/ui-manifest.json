@@ -1,12 +1,12 @@
 {
   "schema": "pictures-ui-manifest.v1",
-  "releaseVersion": "1.2.10",
-  "audioUiSha256": "cb01a45d457a8a82f1b01c3ad26c4d175f4c71a264fac8169ba2f532897fd00e",
+  "releaseVersion": "1.2.11",
+  "audioUiSha256": "019e0a4c80b657103269cc23792dc8ba051688dc56368caa1097b5582a7171ea",
   "helperUiSha256": "b4a90da7a52f4447c948edc2a81ad22137f4bd9746bf230bb29bd4b1a7fb2c68",
   "screenshots": {
-    "tdarr-flow-standalone.png": "b6e9595e09a6d6ed4799c7cd72f10efbf485f31ca8865c5e61fc97c47d56651a",
-    "tdarr-flow-3node.png": "c2cb8b0d965a32b3ab725a9affd266ec24bf0ca9c46f4344235a6d3b22b99180",
-    "tdarr-gpu-normalize-audio-ui.png": "fb24d0ad4d30cfb34bab3016a7f2527ebf39585aef8fae4f2e128b536caeca84",
+    "tdarr-flow-standalone.png": "6bf04497098f21f66192cd491f5dc0c687d7dd1dac93dd14e3ed06fa68c25a95",
+    "tdarr-flow-3node.png": "281d748a962a8d0fb30236a4c33f93b3e868376abcf63b6be8e3e88c92acc792",
+    "tdarr-gpu-normalize-audio-ui.png": "376128d25a7fdb1b28955ef81ec25b4e092fdace17056cd714e94e558cafe04e",
     "tdarr-media-pipeline-helper-prepare-ui.png": "f727b7fd765f348719855ef07c1176532e0447088a998f85aa5f39f95689b444",
     "tdarr-media-pipeline-helper-finish-ui.png": "dde974c521ffb5b859ecfb0903a8075401eecb4bc7fb735469e4bcd731b19706"
   }

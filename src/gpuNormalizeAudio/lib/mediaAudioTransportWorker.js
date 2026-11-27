@@ -11,7 +11,7 @@ const { verifyClockFiles, verifyVideoClocks, createEvidenceCache, prewarmClockEv
 const { probeAudioTimeline } = require("./mediaNativeAudioClock");
 const { planAacClock, planNormalizedAacClock, encodeClockPlan } = require("./audioClockPlan");
 const { audioPresentation } = require("./mediaAudioWindow");
-const { readNormalizedEofContextForWorker, assertAudioMapMatchesEofContext, usesNormalizedEof, resolveNormalizedEofCounts } = require("./mediaAudioEofContext");
+const { readNormalizedEofContextForWorker, assertAudioMapMatchesEofContext, usesNormalizedEof, resolveNormalizedEofCounts, preparedOriginalEnd } = require("./mediaAudioEofContext");
 const { decoderIdentity } = require("./mediaEvidenceTools");
 const { fileDigest, fileDigestAsync, writePrivateReceipt } = require("./mediaEvidenceFiles");
 const { moduleEvidence } = require("./mediaReferenceProof");
@@ -42,7 +42,7 @@ function transportPlans(spec, offset, ffprobe) {
     const eofEntry = spec.eofContext?.streams?.[map.candidateIndex];
     if (usesNormalizedEof(eofEntry, sourceTimeline)) {
       const domain = resolveNormalizedEofCounts(eofEntry, sourceTimeline.samples);
-      const originalEnd = eofEntry.originalWindow.window.declaredEnd;
+      const originalEnd = preparedOriginalEnd(spec.eofContext, eofEntry);
       const { plan, declaredEnd } = planNormalizedAacClock(sourceTimeline, input, offset, {
         counts: domain, originalEnd, candidateWindow: window,
       });

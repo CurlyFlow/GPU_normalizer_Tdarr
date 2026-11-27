@@ -158,4 +158,4 @@ function encodeClockPlan(tracks) {
 }
 
 module.exports = { planAacClock, planAacPreservation, planNormalizedAacClock,
-  assertNormalizedAacWindowCounts, rationalSubtractShift, encodeClockPlan, clockPlanRequiresFragments };
+  assertNormalizedAacWindowCounts, rationalSubtractShift, reduceRational, encodeClockPlan, clockPlanRequiresFragments };

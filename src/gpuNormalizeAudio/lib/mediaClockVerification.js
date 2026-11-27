@@ -156,6 +156,11 @@ function movTextShiftOptions(sourceFile, sourceStream, candidateFile, candidateS
 function normalizeHvccCompleteness(raw) {
   if (!raw || raw.length < 23 || raw[0] !== 1) return null;
   const copy = Buffer.from(raw);
+  // ISO/IEC 14496-15 §8.3.3.1.2 / FFmpeg `hvcc_write`: when `min_spatial_segmentation_idc == 0`,
+  // `parallelismType` (`copy[15] & 0x03`) must be 0 (mixed-type/unknown).
+  if ((((copy[13] & 0x0f) << 8) | copy[14]) === 0 && (copy[15] & 0xfc) === 0xfc) {
+    copy[15] = 0xfc;
+  }
   const numArrays = copy[22];
   let cursor = 23;
   for (let arrayIndex = 0; arrayIndex < numArrays; arrayIndex++) {
@@ -228,7 +233,7 @@ function verifyMappedAudioClocks({ sourceFile, candidateFile, sourceStreams, can
         const domain = resolveNormalizedEofCounts(eofEntry, sourceTimeline.samples);
         timeline = compareAudioTimelines(sourceTimeline, candidateTimeline, offset, domain.decodedSamples);
         candidateWindows ??= audioPresentation(candidateFile).tracks;
-        verifyNormalizedAacWindow(eofEntry, candidateWindows[map.candidateIndex], domain, offset);
+        verifyNormalizedAacWindow(eofEntry, candidateWindows[map.candidateIndex], domain, offset, eofContext);
       } else {
         timeline = compareAudioTimelines(sourceTimeline, candidateTimeline, offset);
       }
@@ -292,4 +297,4 @@ function verifyClockFiles(spec) {
 }
 
 module.exports = { verifyClockFiles, verifyVideoClocks, verifyMappedAudioClocks, createEvidenceCache, prewarmClockEvidence,
-  equivalentMovTextExtradata, movTextShiftOptions, stripMovTextBtrt };
+  equivalentHevcExtradata, equivalentMovTextExtradata, movTextShiftOptions, normalizeHvccCompleteness, stripMovTextBtrt };

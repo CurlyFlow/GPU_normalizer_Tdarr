@@ -17,6 +17,7 @@ typedef struct MergeInput {
     ClockIO io;
     struct stat identity;
     int map[CLOCK_STREAMS];
+    uint64_t stream_samples[CLOCK_STREAMS];
     int ended;
     uint64_t packets;
 } MergeInput;
@@ -153,15 +154,18 @@ static int next_merge_packet(MergeInput *input, AVFormatContext *output, ClockTr
         AVPacket *packet = input->packet;
         if (++input->packets > 100000000 || packet->stream_index < 0
             || (unsigned)packet->stream_index >= input->format->nb_streams) return AVERROR(EINVAL);
+        uint64_t sample_index = input->stream_samples[packet->stream_index]++;
         int mapped = input->map[packet->stream_index];
         if (mapped < 0) { av_packet_unref(packet); continue; }
         if (packet->pts == AV_NOPTS_VALUE || packet->dts == AV_NOPTS_VALUE) return AVERROR(EINVAL);
+        AVStream *before = input->format->streams[packet->stream_index];
         if (tracks) {
-            AVStream *before = input->format->streams[packet->stream_index];
             result = retime_audio
                 ? clock_retime_packet(packet, before, output->streams[mapped], tracks[mapped])
                 : preserve_packet(packet, before, tracks[mapped]);
             if (result < 0) return result;
+        } else {
+            clock_restore_stream_duration(packet, before, sample_index);
         }
         return 0;
     }
@@ -225,7 +229,7 @@ static int run_merge_or_mux(char **arguments, int retime_audio)
     if (video_scale > 0) av_dict_set_int(&options, "video_track_timescale", video_scale, 0);
     for (unsigned i = 0; i < plan.count; i++) if (clock_requires_fragments(&plan.tracks[i])) fragmented = 1;
     if (fragmented) {
-        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
+        av_dict_set(&options, "movflags", "+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
         av_dict_set(&options, "frag_duration", "500000", 0);
     } else {
         av_dict_set(&options, "movflags", "+use_metadata_tags", 0);

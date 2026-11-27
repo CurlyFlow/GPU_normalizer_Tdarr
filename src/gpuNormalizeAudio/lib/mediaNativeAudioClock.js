@@ -102,7 +102,8 @@ function createAudioTimelineParser(expected, overrideTick = null, knownMetadata 
       lastFrameChannels = frameChannels;
       const samples = nativeInteger(frame.nb_samples, true);
       assert.ok(samples <= 2147483647n, "Invalid AVFrame sample count");
-      accumulator.push({ start: { numerator: nativeInteger(frame.pts) * baseNum, denominator: baseDen }, frameSamples: samples });
+      const start = frame.pts === "N/A" ? null : { numerator: nativeInteger(frame.pts) * baseNum, denominator: baseDen };
+      accumulator.push({ start, frameSamples: samples });
     },
     finish() {
       assert.equal(streams, 1, "Missing native audio stream metadata");

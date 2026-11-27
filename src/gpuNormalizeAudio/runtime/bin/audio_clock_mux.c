@@ -165,6 +165,35 @@ int clock_video_timescale(const AVFormatContext *output)
     return scale;
 }
 
+void clock_restore_stream_duration(AVPacket *packet, AVStream *before, uint64_t sample_index)
+{
+    /* MOV/MP4 demux omits packet->duration when CTTS (B-frame reordering) is present;
+     * recover the exact STTS sample delta from the demuxer index so fragmented muxing
+     * never estimates or warns on the final packet of a fragment. */
+    if (packet->duration > 0 || sample_index >= INT_MAX) return;
+    int count = avformat_index_get_entries_count(before);
+    if (count <= 0 || (int)sample_index >= count) return;
+    const AVIndexEntry *cur = avformat_index_get_entry(before, (int)sample_index);
+    if (!cur || cur->timestamp != packet->dts) return;
+    if ((int)sample_index + 1 < count) {
+        const AVIndexEntry *next = avformat_index_get_entry(before, (int)sample_index + 1);
+        if (next && next->timestamp > cur->timestamp) packet->duration = next->timestamp - cur->timestamp;
+        return;
+    }
+    const AVIndexEntry *first = avformat_index_get_entry(before, 0);
+    if (first && before->duration > 0) {
+        __int128 end_dts = (__int128)first->timestamp + before->duration;
+        if (end_dts > cur->timestamp && end_dts - cur->timestamp <= INT64_MAX) {
+            packet->duration = (int64_t)(end_dts - cur->timestamp);
+            return;
+        }
+    }
+    if (sample_index > 0) {
+        const AVIndexEntry *prev = avformat_index_get_entry(before, (int)sample_index - 1);
+        if (prev && cur->timestamp > prev->timestamp) packet->duration = cur->timestamp - prev->timestamp;
+    }
+}
+
 int main(int argc, char **argv)
 {
     void *iterator = NULL;
@@ -189,6 +218,7 @@ int main(int argc, char **argv)
     ClockPlan plan = { 0 };
     ClockTrack *tracks[CLOCK_STREAMS] = { 0 };
     int stream_map[CLOCK_STREAMS];
+    uint64_t stream_samples[CLOCK_STREAMS] = { 0 };
     ClockIO source = { .fd = -1 }, target = { .fd = -1 };
     struct stat original, plan_before;
     int plan_fd = -1, result = AVERROR(EINVAL), fragmented = 0;
@@ -244,7 +274,7 @@ int main(int argc, char **argv)
     // or coded packets excluded by the admitted presentation endpoint.
     if (fragmented) {
         /* One traf per moof makes the muxer's 1/1/1 TFRA coordinates exact. */
-        av_dict_set(&options, "movflags", "+frag_keyframe+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
+        av_dict_set(&options, "movflags", "+empty_moov+default_base_moof+delay_moov+separate_moof+use_metadata_tags", 0);
         av_dict_set(&options, "frag_duration", "500000", 0);
     } else {
         av_dict_set(&options, "movflags", "+use_metadata_tags", 0);
@@ -258,11 +288,16 @@ int main(int argc, char **argv)
             result = AVERROR(EINVAL); goto done;
         }
         int index = packet->stream_index;
+        uint64_t sample_index = stream_samples[index]++;
         int mapped = stream_map[index];
         if (mapped < 0) { av_packet_unref(packet); continue; }
         if (packet->pts == AV_NOPTS_VALUE || packet->dts == AV_NOPTS_VALUE) { result = AVERROR(EINVAL); goto done; }
         AVStream *before = input->streams[index], *after = output->streams[mapped];
-        if (tracks[index] && (result = clock_retime_packet(packet, before, after, tracks[index])) < 0) goto done;
+        if (tracks[index]) {
+            if ((result = clock_retime_packet(packet, before, after, tracks[index])) < 0) goto done;
+        } else {
+            clock_restore_stream_duration(packet, before, sample_index);
+        }
         av_packet_rescale_ts(packet, before->time_base, after->time_base);
         packet->stream_index = mapped;
         packet->pos = -1;

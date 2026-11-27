@@ -1,6 +1,6 @@
 # GPU Normalize Audio for Tdarr
 
-[![Latest Release](https://img.shields.io/badge/release-v1.2.10-blue)](release-notes/1.2.10.md)
+[![Latest Release](https://img.shields.io/badge/release-v1.2.11-blue)](release-notes/1.2.11.md)
 [![CPU Parity](https://img.shields.io/badge/CPU%20parity-100%25%20exact-brightgreen)](#performance)
 [![Speed vs CPU](https://img.shields.io/badge/60min%20speed-4.88x%20vs%20CPU-brightgreen)](#performance)
 
@@ -18,13 +18,13 @@ A Tdarr FlowPlugin that moves FFmpeg `loudnorm`-style audio normalization onto C
 
 ## Performance
 
-Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.2.10`)** using a 5.1 source with no existing stereo track (combined workload = normalized original 5.1 + generated normalized 2-channel fallback, both verified against Tdarr CPU `Normalize Audio`).
+Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.2.11`)** using a 5.1 source with no existing stereo track (combined workload = normalized original 5.1 + generated normalized 2-channel fallback, both verified against Tdarr CPU `Normalize Audio`).
 
 `Speed vs CPU` is measured `SRC_CPU / GPU` wall time: above `1.0x` is faster than CPU, below `1.0x` is slower. Short smoke clips are used for parity checks only and are excluded here.
 
 ![GPU Normalize Audio Performance vs Tdarr CPU Reference](pictures/performance.svg)
 
-| Length | CPU Reference | GPU `1.2.10` | Speed vs CPU | vs `1.2.8` | Result |
+| Length | CPU Reference | GPU `1.2.11` | Speed vs CPU | vs `1.2.8` | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
 | **60 min** | `1426.0s` | **`292.4s`** | **`4.876x`** | `-26.8%` | 388% faster · 5.1 & +2ch parity passed |
 | **30 min** | `738.9s` | **`146.5s`** | **`5.045x`** | `-27.8%` | 405% faster · 5.1 & +2ch parity passed |
@@ -33,7 +33,7 @@ Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.
 <details>
 <summary>Per-stream breakdown (Original 5.1 vs. Generated 2ch)</summary>
 
-| Length | Stream | CPU Reference | GPU `1.2.10` | Speed vs CPU | Result |
+| Length | Stream | CPU Reference | GPU `1.2.11` | Speed vs CPU | Result |
 | --- | --- | ---: | ---: | ---: | --- |
 | 60 min | Original 5.1 | `1094.5s` | `242.6s` | `4.511x` | 351% faster · 5.1 parity passed |
 | 60 min | Generated 2ch | `331.5s` | `246.3s` | `1.346x` | 35% faster · +2ch parity passed |
@@ -44,7 +44,7 @@ Tested on **i9-9900K @ 5 GHz (CPU reference)** vs. **NVIDIA GTX 1050 Ti (GPU `1.
 
 </details>
 
-**What's new in `1.2.10`:** Standalone Matroska (`.mkv`) `-copyts` + per-stream `-itsoffset` A/V sync preservation, non-destructive `Remove Other Languages=false` default, host-wide `Max Concurrent CPU Tasks` + early GPU slot release before finalize, `audio_clock_mux` 32-bit chapter `stts` overflow fix, MKV → MP4 & Node re-sync hardening, and public `Media Pipeline Helper` source. See [release-notes/1.2.10.md](release-notes/1.2.10.md) for full details and 6-codec / 10-scenario smoke coverage.
+**What's new in `1.2.11`:** Plex Direct-Play `+faststart` / `+use_metadata_tags` MP4 packaging with `hvc1` HEVC tagging and lossless **AV1 (`av01`)** stream-copy (preserving 10-bit HDR10 `mdcv`/`clli` and Dolby Vision Profile 10 `dvwC`), NVENC VUI `chroma_location` preservation, `audio_clock_mux` CTTS B-frame STTS & `mov_text` fragment fixes, non-clamped non-zero-start MP4 chapters, multi-AU TrueHD & offset-audio window verification, and bounded copied-audio probe concurrency across standalone and 3-node flows. See [release-notes/1.2.11.md](release-notes/1.2.11.md) for full details and 6-codec / 10-scenario smoke coverage.
 
 ---
 
@@ -79,11 +79,11 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 
 ### Manual Install
 
-1. Download `GPU_normalize_audio_tdarr-1.2.10.zip` from GitHub Releases.
+1. Download `GPU_normalize_audio_tdarr-1.2.11.zip` from GitHub Releases.
 2. Extract it into your Tdarr plugins directory **keeping the version folder** (do not flatten):
 
    ```text
-   FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.10/index.js
+   FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.11/index.js
    ```
 3. In Tdarr WebUI click **Sync Plugins** (or restart Tdarr Server/Node) and select **GPU Normalize Audio** under **Local** Flow Plugins.
 4. *(Optional 3-Node Pipeline)* **Media Pipeline Helper** source lives in [`src/mediaPipelineHelper/`](src/mediaPipelineHelper/) (sharing runtime lock/mux primitives from `src/gpuNormalizeAudio/`) and installs under `FlowPlugins/LocalFlowPlugins/video/mediaPipelineHelper/<version>/` with entrypoint [`lib/mediaPipelineEntry.js`](src/mediaPipelineHelper/lib/mediaPipelineEntry.js).
@@ -134,9 +134,9 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 2. **Node 2 — `GPU Normalize Audio`:**
    - Runs GPU-accelerated normalization and releases its GPU slot before CPU-bound final muxing so another job can use the GPU immediately.
    - Connects **both Output 1 and Output 2** to Node 3 (`finish`).
-3. **Node 3 — `Media Pipeline Helper` (`phase = finish`):**
-   - Encodes non-HEVC video via NVENC (using a GPU slot only when encoding is needed) or stream-copies already-HEVC video losslessly.
-   - Embeds preserved and companion SRT subtitles (`mov_text` / text tracks), verifies full original-relative A/V/subtitle/timing/metadata integrity, and publishes atomically to the configured Completed Directory.
+3. **Node 3 — `Media Pipeline Helper` (`phase = finish`, flow node `Media finish`):**
+   - Stream-copies already Direct-Play-ready **HEVC (`hvc1`)** and **AV1 (`av01`, including 10-bit HDR10 and Dolby Vision Profile 10 `dvwC`)** losslessly, or encodes legacy video codecs via NVENC to HEVC `hvc1` (using a GPU slot only when encoding is needed and preserving source VUI chroma location).
+   - Writes `+faststart` MP4 (`moov` before `mdat`) for instant Plex Direct Play, embeds preserved and companion SRT subtitles (`1/1000` `mov_text`), preserves exact non-zero-start chapters and global tags, verifies full original-relative A/V/subtitle/timing/metadata integrity, and publishes atomically to the configured Completed Directory.
    - Optionally notifies **Radarr** or **Sonarr** via API (`Arr Host` + node-local `Arr API Key`, never written into logs or continuation files) and records durable import receipts.
 
 <details>
@@ -162,7 +162,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 | `Companion Subtitle Default Language` | `finish` | `eng` | Default language tag assigned to untagged companion `.srt` files. |
 | `Include Forced Companion Subtitles` | `finish` | `true` | Includes matching forced companion subtitles. |
 | `Include Untagged Companion Subtitles` | `finish` | `true` | Includes untagged companion subtitles using the configured default language. |
-| `HEVC Video Preset` / `HEVC Video Quality (QP)` | `finish` | `p5` / `25` | NVENC HEVC preset (`p1`–`p7`) and QP (`0`–`51`, lower = higher quality). Already-HEVC video is copied unchanged. |
+| `HEVC Video Preset` / `HEVC Video Quality (QP)` | `finish` | `p5` / `25` | NVENC HEVC preset (`p1`–`p7`) and QP (`0`–`51`, lower = higher quality). Already-HEVC (`hvc1`) and AV1 (`av01`) video are copied unchanged. |
 | `Max Concurrent CPU Tasks` | `prepare` (inherited) | `1` | Host-wide CPU concurrency limit across preparation, probes, copy muxing, verification, and publication (`0` disables). Hidden on `finish` because `finish` inherits `prepare`. |
 | `Max Concurrent GPU Tasks` | `prepare` (inherited) | `1` | Host-wide GPU concurrency limit shared with **GPU Normalize Audio** (`finish` acquires a GPU slot only for NVENC video encoding; `0` disables). Hidden on `finish` because `finish` inherits `prepare`. |
 | `Debug Logging` | `prepare` + `finish` | `false` | Enables full successful helper FFmpeg output in job logs. |
@@ -181,7 +181,7 @@ curl -fsSL https://raw.githubusercontent.com/CurlyFlow/GPU_normalizer_Tdarr/main
 
 ## Architecture
 
-Active source for both public plugins lives under [`src/`](src/); immutable normalizer release snapshots live under [`FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/`](FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.10/) (older `<= 1.2.8` releases remain available via Git tags and GitHub Releases).
+Active source for both public plugins lives under [`src/`](src/); immutable normalizer release snapshots live under [`FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/`](FlowPlugins/LocalFlowPlugins/audio/gpuNormalizeAudio/1.2.11/) (older `<= 1.2.8` releases remain available via Git tags and GitHub Releases).
 
 - **GPU Normalize Audio (JS):** [`src/gpuNormalizeAudio/index.js`](src/gpuNormalizeAudio/index.js) & [`lib/`](src/gpuNormalizeAudio/lib/) — stream selection, language ordering, stereo fallback planning, CPU/GPU lock coordination, and direct clock final muxing.
 - **Streaming Runtime & Native Helpers (Python / C):** [`src/gpuNormalizeAudio/runtime/bin/`](src/gpuNormalizeAudio/runtime/bin/) — streaming two-pass orchestration plus native C helpers (`audio_clock_mux`, `aac_encode_mt`, `opx_loudnorm_channel_stats`).
@@ -194,16 +194,17 @@ Active source for both public plugins lives under [`src/`](src/); immutable norm
 
 ## Release History
 
-Use **`1.2.10`** for the latest hardened long-media normalizer with standalone MKV A/V sync, host-wide CPU/GPU concurrency, and exact `100%` CPU parity ([release notes](release-notes/1.2.10.md)).
+Use **`1.2.11`** for the latest hardened normalizer (standalone or wrapped with `Media prepare` / `Media finish`) featuring Plex Direct-Play `+faststart` / `hvc1` / AV1 Dolby Vision & HDR10 preservation, `audio_clock_mux` CTTS & `mov_text` fixes, non-clamped MP4 chapters, TrueHD multi-AU verification, and exact `100%` CPU parity ([release notes](release-notes/1.2.11.md)).
 
 <details>
-<summary>Older versions & timing history (1.2.10 → 0.0.x)</summary>
+<summary>Older versions & timing history (1.2.11 → 0.0.x)</summary>
 
 > Note: Releases from `1.1.11` onward benchmark the combined 5.1 + generated 2ch default workload (`Add Generated 2-Channel Track=true`); earlier rows measured primary-stream only.
 
 | Version | 10 min GPU | 30 min GPU | Summary |
 | --- | ---: | ---: | --- |
-| **`1.2.10`** | `53.2s` | `146.5s` | Standalone MKV `-copyts`/`-itsoffset` A/V sync, non-destructive `Remove Other Languages=false`, host-wide CPU concurrency + early GPU release, MP4 chapter `stts` & MKV→MP4 hardening, public `Media Pipeline Helper` (`100%` parity, `292.4s` on `60min`). |
+| **`1.2.11`** | `53.2s` | `146.5s` | Plex Direct-Play `+faststart`/`hvc1` & lossless AV1 (`av01`) Dolby Vision Profile 10 `dvwC` + HDR10 preservation, NVENC `chroma_location`, `audio_clock_mux` CTTS/`mov_text` fixes, non-clamped chapters, multi-AU TrueHD & offset-audio verification (`100%` parity, `292.4s` on `60min`). |
+| `1.2.10` | `53.2s` | `146.5s` | Standalone MKV `-copyts`/`-itsoffset` A/V sync, non-destructive `Remove Other Languages=false`, host-wide CPU concurrency + early GPU release, MP4 chapter `stts` & MKV→MP4 hardening, public `Media Pipeline Helper` (`100%` parity, `292.4s` on `60min`). |
 | `1.2.9` | `51.5s` | `139.4s` | CUDA SWR resampling, parallel AAC-LC (`aac_encode_mt`), fused MT stats, direct clock mux (`24%`–`34%` faster than `1.2.8`, `100%` parity). |
 | `1.2.8` | `71.1s` | `202.8s` | Promoted long-media defaults, fixed post-success stereo fallback teardown crash (`14%`–`17%` faster than `1.2.7`). |
 | `1.2.7` | `86.1s` | `241.0s` | Parallel same-source 5.1 + generated 2ch routes on long jobs (`22%`–`30%` faster than `1.2.6`). |

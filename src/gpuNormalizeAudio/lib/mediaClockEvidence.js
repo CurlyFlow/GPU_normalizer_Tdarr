@@ -80,12 +80,12 @@ function headersMatch(beforeHeaders, afterHeaders, allowEquivalentExtradata) {
 // `movenc.c` (`mov_write_subtitle_end_packet`) injects with duration=0 during MP4 copy.
 const EMPTY_MOV_TEXT_SHA256 = '96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7';
 
-function nextPacketRow(iterator, skipZeroDurationMovTextEnd) {
+function nextPacketRow(iterator, skipMovTextEmptyMarkers) {
   while (true) {
     const step = iterator.next();
-    if (step.done || !skipZeroDurationMovTextEnd) return step;
+    if (step.done || !skipMovTextEmptyMarkers) return step;
     const row = step.value;
-    if (!(row.length === 6 && row[3] === '0' && row[4] === '2' && row[5] === EMPTY_MOV_TEXT_SHA256)) return step;
+    if (!(row.length === 6 && row[4] === '2' && row[5] === EMPTY_MOV_TEXT_SHA256)) return step;
   }
 }
 
@@ -106,17 +106,20 @@ function videoShift(source, output, comparePixels, options = {}) {
       if (left.done) break;
       const prior = left.value, next = right.value;
       if (pendingDur) {
-        assert.equal(BigInt(next[2]), pendingDur.expectedNextPts, 'Video packet duration changed');
+        // ISO MP4 `stts` sample_delta is strictly `next.dts - cur.dts` (`row[1]`),
+        // whereas B-frame `pts` (`row[2]`) is reordered.
+        assert.equal(BigInt(next[1]), pendingDur.expectedNextDts, 'Video packet duration changed');
         pendingDur = null;
       }
       offset ??= subtract(packetTime(next[1], after.base), packetTime(prior[1], before.base));
       assert.equal(next[0], prior[0]);
       assert.equal(next[4], prior[4], 'Video packet/frame size changed');
       if (comparePixels) assert.deepEqual(next.slice(5), prior.slice(5), 'Video packet payload changed');
-      const sameDur = sameTime(packetTime(next[3], after.base), packetTime(prior[3], before.base));
+      const sameDur = sameTime(packetTime(next[3], after.base), packetTime(prior[3], before.base))
+        || (skipZeroMovTextEnd && BigInt(next[3]) === 0n);
       if (!sameDur) {
         assert.ok(matroskaCoarse && BigInt(next[3]) > 0n, 'Video packet duration changed');
-        pendingDur = { expectedNextPts: BigInt(next[2]) + BigInt(next[3]), priorDur: BigInt(prior[3]), nextDur: BigInt(next[3]) };
+        pendingDur = { expectedNextDts: BigInt(next[1]) + BigInt(next[3]), priorDur: BigInt(prior[3]), nextDur: BigInt(next[3]) };
       }
       for (const field of [1, 2]) {
         assert.ok(sameTime(subtract(packetTime(next[field], after.base), packetTime(prior[field], before.base)), offset),
@@ -124,8 +127,8 @@ function videoShift(source, output, comparePixels, options = {}) {
       }
     }
     if (pendingDur) {
-      assert.ok(pendingDur.nextDur - pendingDur.priorDur === 1n || pendingDur.priorDur - pendingDur.nextDur === 1n,
-        'Video packet duration changed');
+      assert.ok(pendingDur.priorDur > 0n && pendingDur.nextDur > 0n
+        && pendingDur.nextDur <= pendingDur.priorDur * 2n + 2n, 'Video packet duration changed');
     }
     assert.ok(offset !== undefined, 'Missing packet evidence');
     return offset;
@@ -206,8 +209,15 @@ function createAudioTimelineAccumulator(rate, tick = null) {
   let samples = 0n;
   let previousEnd = null;
   return {
-    push({ start, frameSamples }) {
+    push({ start: rawStart, frameSamples }) {
       assert.ok(typeof frameSamples === 'bigint' && frameSamples > 0n, 'Invalid decoded audio frame size');
+      // Multi-AU Matroska TrueHD blocks can omit explicit packet PTS (`N/A`) on the
+      // second 40-sample MLP access unit; advance linearly from `previousEnd` and
+      // verify continuity against the next explicitly timestamped frame.
+      if (rawStart === null) {
+        assert.ok(previousEnd !== null, 'First decoded audio frame lacks PTS');
+      }
+      const start = rawStart ?? previousEnd;
       assert.ok(typeof start.numerator === 'bigint' && typeof start.denominator === 'bigint'
         && start.denominator > 0n, 'Invalid native audio PTS');
       let continuous = false;

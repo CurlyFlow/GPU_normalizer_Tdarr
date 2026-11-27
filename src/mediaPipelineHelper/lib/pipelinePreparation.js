@@ -12,7 +12,11 @@ const {
   pushMp4MetadataTagsArgs,
 } = require("./outputAudioSpecs");
 const { isRegeneratedChapterCarrier } = require("./audioChannelHelpers");
-const { canonicalMp4Language } = require("./mediaMetadataEvidence");
+const {
+  pushCanonicalMp4StreamLanguageArgs,
+  pushPlexMp4VideoTagArgs,
+  sourceVideoTimescale,
+} = require("./mp4ContainerPolicy");
 
 function isDescriptive(stream, includeSdh) {
   const title = String(stream.tags?.title || "").toLowerCase();
@@ -53,15 +57,6 @@ function canPromoteMkvToMp4(file, retained) {
   });
 }
 
-function sourceVideoTimescale(retained) {
-  for (const stream of retained) {
-    if (stream.codec_type !== "video") continue;
-    const match = String(stream.time_base || "").match(/^1\/([1-9]\d{0,9})$/);
-    if (match && Number(match[1]) > 0 && Number(match[1]) <= 1000000) return match[1];
-  }
-  return null;
-}
-
 function planPreparation(file, original, settings, exists = fs.existsSync) {
   const streams = file.ffProbeData?.streams;
   if (!Array.isArray(streams) || streams.length === 0) {
@@ -100,20 +95,13 @@ function planPreparation(file, original, settings, exists = fs.existsSync) {
     let videoOrdinal = 0;
     for (const stream of retained) {
       if (stream.codec_type !== "video") continue;
-      if (stream.codec_name === "hevc") outputs.push(`-tag:v:${videoOrdinal}`, "hvc1");
+      pushPlexMp4VideoTagArgs(outputs, videoOrdinal, stream.codec_name);
       videoOrdinal += 1;
     }
     pushMp4ConvertibleSubtitleArgs(outputs, retained);
     const videoScale = sourceVideoTimescale(retained);
     if (videoScale) outputs.push("-video_track_timescale", videoScale);
-    retained.forEach((stream, outputIndex) => {
-      const rawLang = stream.tags?.language;
-      if (typeof rawLang !== "string" || !rawLang.trim()) return;
-      const normalized = canonicalMp4Language(rawLang);
-      if (normalized !== rawLang.trim().toLowerCase()) {
-        outputs.push(`-metadata:s:${outputIndex}`, `language=${normalized}`);
-      }
-    });
+    pushCanonicalMp4StreamLanguageArgs(outputs, retained);
   }
   pushMp4MetadataTagsArgs(outputs, container);
   const extractions = [...targets].filter(([target]) => !exists(target));

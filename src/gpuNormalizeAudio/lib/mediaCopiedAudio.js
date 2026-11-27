@@ -43,10 +43,15 @@ function decodedFingerprint(executable, file, index, format, channels) {
   });
 }
 
+const COMPARE_STREAM_CONCURRENCY = 2;
+
 async function verifyCopiedAudio({ sourceFile, candidateFile, sourceStreams, candidateStreams, audioMap, ffmpegPath, directory = null, evidenceCache = null }) {
   const original = sourceStreams.filter(stream => stream.type === "audio");
   const candidate = candidateStreams.filter(stream => stream.type === "audio");
-  return await Promise.all(audioMap.filter(value => value.compareSamples).map(async map => {
+  const selected = audioMap.filter(value => value.compareSamples);
+  const results = new Array(selected.length);
+  let cursor = 0;
+  const verifyOne = async map => {
     const evidence = { map_id: map.id, status: "held", errors: [] };
     try {
       const before = original[map.sourceIndex], after = candidate[map.candidateIndex];
@@ -78,7 +83,14 @@ async function verifyCopiedAudio({ sourceFile, candidateFile, sourceStreams, can
       evidence.status = "pass";
     } catch (error) { evidence.errors.push(error.message); }
     return evidence;
+  };
+  await Promise.all(Array.from({ length: Math.min(COMPARE_STREAM_CONCURRENCY, selected.length) }, async () => {
+    while (cursor < selected.length) {
+      const index = cursor++;
+      results[index] = await verifyOne(selected[index]);
+    }
   }));
+  return results;
 }
 
 module.exports = { verifyCopiedAudio };
